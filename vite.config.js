@@ -1,9 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
+// CDN_RELATIVE: relative paths for raw.githack / jsDelivr (works from any URL prefix).
+// GITHUB_PAGES : /derby-dashboard/ for username.github.io project pages.
+// default      : / for Vercel.
+const base =
+  process.env.CDN_RELATIVE === 'true'
+    ? './'
+    : process.env.GITHUB_PAGES === 'true'
+    ? '/derby-dashboard/'
+    : '/'
+
 export default defineConfig({
   plugins: [react()],
-  // Vercel serves from / ; GitHub Pages serves from /derby-dashboard/.
-  base: process.env.GITHUB_PAGES === 'true' ? '/derby-dashboard/' : '/',
+  base,
 })
