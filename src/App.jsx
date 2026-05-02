@@ -1002,14 +1002,54 @@ function TicketTab({ modeled, isMobile }) {
 
   return (
     <div style={{ padding: isMobile ? 12 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
-      <Card>
+      <Card style={{ background: "linear-gradient(180deg, #1a1605 0%, #0d0f08 100%)", borderColor: COLORS.gold }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.gold, letterSpacing: 0.5 }}>
-          $200 BANKROLL — DYNAMIC TICKET
+          $200 BANKROLL → $2,000 TARGET (10×)
         </div>
         <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 6, lineHeight: 1.6 }}>
-          All bets generated from the model. Allocation proportional to composite score (modelProb × valueRating).
-          Trifecta and superfecta keyed for capital efficiency. Reserve held for final-15-min tote drift.
+          Longshot-heavy structure. Win bets are split across 4 anchors ($5 each) and 6 longshots ($4 each at 14/1–25/1)
+          for cheap lottery coverage. The 10× return path is the trifecta (anchor / anchor / longshot 3rd) or
+          superfecta (anchor / anchor / mid / longshot 4th) — that's where Derby payouts live.
         </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          <Badge color={COLORS.gold}>4 anchors</Badge>
+          <Badge color={COLORS.amber}>5 mid</Badge>
+          <Badge color={COLORS.purple}>{ticket.longshots.length} longshots</Badge>
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.gold, letterSpacing: 0.5, marginBottom: 10 }}>
+          🏗️ TICKET TIERS
+        </div>
+        {[
+          { label: "ANCHORS — keyed 1st in exotics, $5 win each", horses: ticket.anchors, color: COLORS.gold },
+          { label: "MID — fill the 3rd slot of superfectas", horses: ticket.mid, color: COLORS.amber },
+          { label: "LONGSHOTS — $4 win lottery + 3rd/4th-slot exotic spread", horses: ticket.longshots, color: COLORS.purple },
+        ].map((tier) => (
+          <div key={tier.label} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: COLORS.textDim, fontWeight: 600, marginBottom: 4, letterSpacing: 0.4 }}>
+              {tier.label}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {tier.horses.map((h) => (
+                <span
+                  key={h.post}
+                  style={{
+                    fontSize: 11,
+                    color: COLORS.text,
+                    background: COLORS.panel2,
+                    borderLeft: `2px solid ${tier.color}`,
+                    padding: "3px 7px",
+                    borderRadius: 3,
+                  }}
+                >
+                  #{h.post} {h.name} <span style={{ color: COLORS.gold }}>{h.oddsDisplay}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
       </Card>
 
       {steamHorse && (
@@ -1053,11 +1093,13 @@ function TicketTab({ modeled, isMobile }) {
 
       <Card>
         <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.gold, marginBottom: 10 }}>
-          💵 PAYOUT SCENARIOS
+          💵 10× PAYOUT PATHS
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
-          {ticket.candidates.map((h, i) => {
-            const amt = [30, 20, 15, 10, 5][i];
+          {ticket.candidates.map((h) => {
+            const isAnchor = ticket.anchors.includes(h);
+            const amt = isAnchor ? 5 : 4;
+            const ret = amt * h.dec;
             return (
               <div
                 key={h.post}
@@ -1072,19 +1114,23 @@ function TicketTab({ modeled, isMobile }) {
                 }}
               >
                 <span>
-                  {h.name} WIN @ {h.oddsDisplay}
+                  {isAnchor ? "🎯" : "🎟️"} {h.name} WIN @ {h.oddsDisplay}
                 </span>
                 <span style={{ color: COLORS.gold, fontWeight: 600 }}>
-                  ${amt} → ${(amt * h.dec).toFixed(0)} ({(amt * h.dec - amt).toFixed(0)} profit)
+                  ${amt} → ${ret.toFixed(0)}
                 </span>
               </div>
             );
           })}
         </div>
-        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.textDim, lineHeight: 1.5 }}>
-          Trifecta hit estimate: $500–$3,000+ range with longshots underneath the favorite. Superfecta hit estimate:
-          $2,000–$10,000+ depending on closing prices. All pari-mutuel returns are estimates; final payouts depend on
-          total pool size and number of winning tickets.
+        <div style={{ marginTop: 12, padding: 10, background: COLORS.panel2, borderLeft: `3px solid ${COLORS.amber}`, fontSize: 12, color: COLORS.text, lineHeight: 1.55 }}>
+          <strong style={{ color: COLORS.gold }}>Trifecta hit</strong> (anchor/anchor/longshot 3rd):
+          typical $2,000–$5,000 → <strong style={{ color: COLORS.greenLight }}>10–25×</strong> bankroll.<br />
+          <strong style={{ color: COLORS.gold }}>Superfecta hit</strong> (anchor/anchor/mid/longshot 4th):
+          typical $5,000–$50,000 → <strong style={{ color: COLORS.greenLight }}>25–250×</strong> bankroll. ← primary 10× driver.
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: COLORS.textDim, lineHeight: 1.5 }}>
+          Pari-mutuel returns are estimates; final payouts depend on total pool size and number of winning tickets.
         </div>
       </Card>
 
