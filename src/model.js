@@ -83,98 +83,150 @@ export function monteCarlo(horses, N = 10000) {
   }));
 }
 
-// Generate dynamic ticket recommendations from model output
+// 10x bankroll target ($200 → $2,000) with longshot-heavy exotics.
+// Strategy: small wins on anchors + lottery wins on longshots, then concentrate
+// in trifectas/superfectas keyed with anchors on top and longshots underneath.
+// That payout structure is where 10x+ multipliers actually exist on Derby Day.
 export function generateTicket(modeled) {
-  const candidates = modeled
+  const sorted = [...modeled].sort((a, b) => b.modelProb - a.modelProb);
+
+  // ANCHORS — high model%, fundamentals intact. Top of every ticket.
+  const anchors = sorted
     .filter(
       (h) =>
-        h.modelProb >= 4.0 &&
-        h.valueRating >= 1.10 &&
-        (h.beyer >= 100 || h.beyer === null) &&
+        h.modelProb >= 8 &&
+        (h.beyer === null || h.beyer >= 100) &&
         !h.formCollapse &&
         !h.maiden
     )
-    .map((h) => ({ ...h, composite: h.modelProb * h.valueRating }))
-    .sort((a, b) => b.composite - a.composite)
+    .slice(0, 4);
+
+  // MID — secondary contenders that fit in the 3rd slot of supers.
+  // Includes mid-priced horses with realistic upside (Renegade, Wonder Dean, Potente, Danon Bourbon).
+  const mid = sorted
+    .filter(
+      (h) =>
+        !anchors.includes(h) &&
+        h.modelProb >= 2.5 &&
+        !h.maiden &&
+        h.starts >= 3
+    )
     .slice(0, 5);
 
-  const winAllocations = [30, 20, 15, 10, 5];
-  const winBets = candidates.map((h, i) => ({
-    type: "WIN",
-    horses: [h],
-    amount: winAllocations[i] || 0,
-    why: `${h.name}: composite score ${h.composite.toFixed(1)} (model ${h.modelProb.toFixed(1)}% × value ${h.valueRating.toFixed(2)}). Beyer ${h.beyer ?? "—"}. Allocated $${winAllocations[i]}.`,
-  }));
+  // LONGSHOTS — 13/1+, real path (not maidens, not 0-start newbies, not formCollapse).
+  // These are the engine of the 10x payout — they sit underneath anchors in exotics.
+  // Note: includes mid-tier horses too, since 14/1+ horses are still "longshots" in
+  // betting terms even if the model gives them respectable %.
+  const longshots = sorted
+    .filter(
+      (h) =>
+        !anchors.includes(h) &&
+        h.dec >= 13 &&
+        !h.maiden &&
+        !h.formCollapse &&
+        h.starts >= 3
+    )
+    .slice(0, 8);
 
-  const exactaBet =
-    candidates.length >= 2
-      ? {
-          type: "EXACTA",
-          horses: [candidates[0], candidates[1]],
-          amount: 10,
-          why: `Box top 2 candidates by composite score: ${candidates[0].name} & ${candidates[1].name}. $5 per combo × 2 combos = $10.`,
-        }
-      : null;
+  const bets = [];
 
-  // Trifecta wheel: top horse keyed 1st, all others 2nd & 3rd
-  const triUnder = candidates.slice(1);
-  const triCombos = triUnder.length >= 2 ? triUnder.length * (triUnder.length - 1) : 0;
-  const triPerCombo = triCombos > 0 ? Math.max(1, Math.round((40 / triCombos) * 2) / 2) : 0;
-  const triTotal = triCombos * triPerCombo;
-  const trifectaBet =
-    candidates.length >= 3
-      ? {
-          type: "TRIFECTA",
-          horses: candidates,
-          key: candidates[0],
-          under: triUnder,
-          amount: triTotal,
-          combos: triCombos,
-          perCombo: triPerCombo,
-          why: `Key ${candidates[0].name} on top. ${triUnder.length} horses under (${triUnder.map((h) => h.name).join(", ")}) = ${triCombos} combos at $${triPerCombo} each = $${triTotal}.`,
-        }
-      : null;
+  // WIN — anchors at $5 each (cover, not 10x driver)
+  anchors.forEach((h) => {
+    bets.push({
+      type: "WIN",
+      horses: [h],
+      amount: 5,
+      why: `Anchor. Model ${h.modelProb.toFixed(1)}% · value ${h.valueRating.toFixed(2)}× · Beyer ${h.beyer ?? "—"}. $5 → $${(5 * h.dec).toFixed(0)} if wins.`,
+    });
+  });
 
-  // Superfecta key: top horse 1st, then descending pools for 2/3/4
-  let sfCombos = 0;
-  if (candidates.length >= 4) {
-    const p2 = candidates.slice(1, 3);
-    const p3 = candidates.slice(1, 4);
-    const p4 = candidates.slice(1, 5);
-    for (const a of p2) for (const b of p3) for (const c of p4) {
-      if (a.name !== b.name && a.name !== c.name && b.name !== c.name) sfCombos++;
-    }
+  // WIN — top 6 longshots at $4 each (lottery tickets, 14/1–48/1 range).
+  // Cheap individually but if any one hits at 25/1+ we clear $100+ on a $4 bet.
+  const longshotWinPicks = longshots.slice(0, 6);
+  longshotWinPicks.forEach((h) => {
+    bets.push({
+      type: "WIN",
+      horses: [h],
+      amount: 4,
+      why: `Longshot lottery @ ${h.oddsDisplay}. $4 → $${(4 * h.dec).toFixed(0)} if wins. Path: ${h.notes.split(".")[0]}.`,
+    });
+  });
+
+  // EXACTA BOX — 4 anchors, $1 × 12 combos = $12
+  let exactaBet = null;
+  if (anchors.length >= 4) {
+    const combos = anchors.length * (anchors.length - 1);
+    exactaBet = {
+      type: "EXACTA",
+      horses: anchors,
+      amount: combos * 1,
+      combos,
+      perCombo: 1,
+      why: `$1 box of all ${anchors.length} anchors. ${combos} combos. Hits if any 2 anchors finish 1-2. Estimated payout $40–$200.`,
+    };
+    bets.push(exactaBet);
   }
-  const sfPerCombo = sfCombos > 0 ? Math.max(0.5, Math.round((35 / sfCombos) * 2) / 2) : 0;
-  const sfTotal = sfCombos * sfPerCombo;
-  const superfectaBet =
-    candidates.length >= 4
-      ? {
-          type: "SUPERFECTA",
-          horses: candidates,
-          key: candidates[0],
-          amount: sfTotal,
-          combos: sfCombos,
-          perCombo: sfPerCombo,
-          why: `Key ${candidates[0].name} 1st. Spreads underneath (positions 2-4) using candidates ranked 2-${candidates.length}. ${sfCombos} combos at $${sfPerCombo} each = $${sfTotal}. $${35 - sfTotal} of $35 superfecta budget unallocated.`,
-        }
-      : null;
 
-  const winTotal = winBets.reduce((s, b) => s + b.amount, 0);
-  const exactaTotal = exactaBet ? exactaBet.amount : 0;
-  const reserve = 35;
-  const allocated = winTotal + exactaTotal + triTotal + sfTotal + reserve;
-  const remainder = 200 - allocated;
+  // TRIFECTA — key each top-3 anchor 1st separately, with anchors 2nd, longshots 3rd.
+  // 1 × (anchors-1) × longshotPool combos at $1 each.
+  const triKeys = anchors.slice(0, 3);
+  const triUnderAnchors = anchors;
+  const triUnderLongshots = longshots.slice(0, 6);
+  triKeys.forEach((key) => {
+    const second = triUnderAnchors.filter((h) => h !== key);
+    const third = triUnderLongshots;
+    const combos = second.length * third.length;
+    bets.push({
+      type: "TRIFECTA",
+      horses: [key, ...second, ...third],
+      key,
+      under: [...second, ...third],
+      amount: combos * 1,
+      combos,
+      perCombo: 1,
+      why: `Key ${key.name} 1st / ${second.length} anchors 2nd / ${third.length} longshots 3rd = ${combos} combos × $1. Estimated hit $1,500–$5,000+ when a longshot lands 3rd. ← 10x target lives here.`,
+    });
+  });
 
-  const reserveBet = {
+  // SUPERFECTA — key each top-3 anchor 1st, anchors 2nd, mid 3rd, deep longshots 4th.
+  // Wide 4th slot (7 longshots) maximizes the chance of catching a deep board-filler
+  // landing 4th, where the biggest payouts live ($5,000–$50,000+ typical Derby SF).
+  const sfKeys = anchors.slice(0, 3);
+  const sfThirdPool = mid.slice(0, 5);
+  const sfFourthPool = longshots.slice(0, 7);
+  sfKeys.forEach((key) => {
+    const second = anchors.filter((h) => h !== key);
+    const third = sfThirdPool.filter((h) => h !== key);
+    const fourth = sfFourthPool;
+    let combos = 0;
+    for (const b of second)
+      for (const c of third)
+        for (const d of fourth)
+          if (b !== c && b !== d && c !== d && b !== key && c !== key && d !== key) combos++;
+    const perCombo = 0.4;
+    bets.push({
+      type: "SUPERFECTA",
+      horses: [key, ...second, ...third, ...fourth],
+      key,
+      amount: +(combos * perCombo).toFixed(2),
+      combos,
+      perCombo,
+      why: `Key ${key.name} 1st / ${second.length} anchors 2nd / ${third.length} mid 3rd / ${fourth.length} deep 4th = ${combos} combos × $${perCombo}. Estimated hit $5,000–$50,000+ when a longshot lands 4th. ← Primary 10x driver.`,
+    });
+  });
+
+  const allocated = bets.reduce((s, b) => s + b.amount, 0);
+  const remainder = Math.max(0, 200 - allocated);
+  bets.push({
     type: "RESERVE",
     horses: [],
-    amount: reserve + Math.max(0, remainder),
-    why: `Tote watch reserve. Hold until 15 minutes before post. If a horse with valueRating > 1.5 drifts 20%+ from its current live odds, allocate to that win bet. Late tote money is the sharpest signal.`,
-  };
+    amount: remainder,
+    why: `Late-tote reserve. Hold until 15 min before post. If a longshot at 25/1+ shortens 30% on the board, fire $5–10 win bets. Late drift is the sharpest signal in horse racing.`,
+  });
 
-  const bets = [...winBets, exactaBet, trifectaBet, superfectaBet, reserveBet].filter(Boolean);
+  // Candidates surfaced to UI: anchors first, then longshots-with-win-bets
+  const candidates = [...anchors, ...longshotWinPicks];
   const total = bets.reduce((s, b) => s + b.amount, 0);
 
-  return { bets, candidates, total };
+  return { bets, candidates, total, anchors, mid, longshots, longshotWinPicks };
 }
