@@ -27,7 +27,7 @@ git add . && git commit -m "update" && git push
 
 ## Data sources
 
-- Live odds: DK Horse tote (snapshot 5:23 PM ET, May 2 2026)
+- Live odds: FanDuel Racing tote (snapshot 5:58 PM ET, May 2 2026)
 - Beyer Speed Figures: Daily Racing Form
 - Post position history: Churchill Downs 40-year archive
 - Future live data: theracingapi.com North America add-on (£49.99/mo)

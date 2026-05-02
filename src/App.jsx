@@ -380,8 +380,9 @@ function ModelTab({ modeled, isMobile }) {
           lineHeight: 1.5,
         }}
       >
-        🔥 <strong style={{ color: COLORS.gold }}>So Happy: 15/1 ML → 5/1 live</strong> — largest sharp move in
-        the field. <strong style={{ color: COLORS.red }}>Renegade faded 4/1 → 6/1.</strong>
+        🔥 <strong style={{ color: COLORS.gold }}>So Happy: 15/1 ML → 6/1 live</strong> — largest sharp move in
+        the field. <strong style={{ color: COLORS.greenLight }}>Chief Wallabee: 8/1 → 6/1</strong> — Mott/Alvarado
+        combo getting hammered.
       </div>
 
       <Card>
@@ -761,8 +762,9 @@ function FieldTab({ modeled, isMobile, editMode, setOdds }) {
 
 function SignalsTab({ modeled, isMobile }) {
   const moves = [
-    { name: "So Happy", ml: "15/1", live: "5/1", pct: "-67%", note: "🔥 Sharp money. Largest move in field.", color: COLORS.gold },
-    { name: "Renegade", ml: "4/1", live: "6/1", pct: "+50%", note: "Market fading ML favorite. Confirms post 1 concerns.", color: COLORS.red },
+    { name: "So Happy", ml: "15/1", live: "6/1", pct: "-60%", note: "🔥 Sharp money. Largest move in field. Slight cool-off from earlier 5/1.", color: COLORS.gold },
+    { name: "Chief Wallabee", ml: "8/1", live: "6/1", pct: "-25%", note: "🔥 Mott/Alvarado combo (last year's winners) getting hammered.", color: COLORS.greenLight },
+    { name: "Renegade", ml: "4/1", live: "5/1", pct: "+25%", note: "Mild drift from ML. Stabilized as co-favorite. Post 1 concerns persist.", color: COLORS.red },
     { name: "Litmus Test", ml: "50/1", live: "25/1", pct: "-50%", note: "Notable but form doesn't support. Likely public.", color: COLORS.textDim },
     { name: "Emerging Market", ml: "15/1", live: "9/1", pct: "-40%", note: "Prat money + 2 undercard wins. Hard filters fail.", color: COLORS.amber },
     { name: "Great White", ml: "50/1", live: "23/1", pct: "-54%", note: "Likely public money. Below Beyer threshold.", color: COLORS.textDim },
@@ -1088,7 +1090,7 @@ function TicketTab({ modeled, isMobile }) {
 
       <Card>
         <div style={{ fontSize: 11, color: COLORS.textDim, lineHeight: 1.6 }}>
-          <strong style={{ color: COLORS.gold }}>Data sources:</strong> DK Horse tote at 5:23 PM ET May 2 2026.
+          <strong style={{ color: COLORS.gold }}>Data sources:</strong> FanDuel Racing tote at 5:58 PM ET May 2 2026.
           Beyer Speed Figures from Daily Racing Form. Post position history from Churchill Downs 40-year archive.
           Future live data: theracingapi.com North America add-on (£49.99/mo, entries + results every 5 min).
           Live odds proxy: theOddsAPI.com via Vercel serverless function.
