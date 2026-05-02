@@ -38,6 +38,62 @@ function useWindowWidth() {
   return w;
 }
 
+const STORAGE_KEY = "derby-custom-odds-v1";
+
+function useCustomOdds() {
+  const [overrides, setOverrides] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [updatedAt, setUpdatedAt] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY + "-ts") || null;
+    } catch {
+      return null;
+    }
+  });
+  const setOdds = (post, dec) => {
+    setOverrides((prev) => {
+      const next = { ...prev };
+      if (dec === null || dec === undefined || isNaN(dec)) delete next[post];
+      else next[post] = dec;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        const ts = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY + "-ts", ts);
+        setUpdatedAt(ts);
+      } catch {}
+      return next;
+    });
+  };
+  const resetAll = () => {
+    setOverrides({});
+    setUpdatedAt(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY + "-ts");
+    } catch {}
+  };
+  return { overrides, setOdds, resetAll, updatedAt };
+}
+
+function applyOverrides(field, overrides) {
+  return field.map((h) => {
+    if (overrides[h.post] !== undefined) {
+      const dec = overrides[h.post];
+      const frac = dec - 1;
+      const oddsDisplay =
+        Number.isInteger(frac) ? `${frac}/1` : `${frac.toFixed(1)}/1`;
+      return { ...h, dec, oddsDisplay, edited: true };
+    }
+    return h;
+  });
+}
+
 const fmt = (n, d = 1) => (typeof n === "number" ? n.toFixed(d) : "—");
 
 function Badge({ children, color = COLORS.gold }) {
@@ -97,7 +153,10 @@ function StatBlock({ label, value, color = COLORS.text }) {
   );
 }
 
-function Header({ isMobile }) {
+function Header({ isMobile, editMode, setEditMode, updatedAt, resetAll, overrideCount }) {
+  const tsLabel = updatedAt
+    ? new Date(updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : null;
   return (
     <div
       style={{
@@ -108,28 +167,103 @@ function Header({ isMobile }) {
     >
       <div
         style={{
-          fontSize: isMobile ? 11 : 12,
-          color: COLORS.gold,
-          letterSpacing: 2,
-          fontWeight: 600,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 8,
         }}
       >
-        ★ {RACE.date.toUpperCase()} · {RACE.track.toUpperCase()} ★
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              fontSize: isMobile ? 11 : 12,
+              color: COLORS.gold,
+              letterSpacing: 2,
+              fontWeight: 600,
+            }}
+          >
+            ★ {RACE.date.toUpperCase()} · {RACE.track.toUpperCase()} ★
+          </div>
+          <div
+            style={{
+              fontSize: isMobile ? 22 : 30,
+              fontWeight: 700,
+              color: COLORS.text,
+              marginTop: 4,
+              letterSpacing: 0.5,
+            }}
+          >
+            {RACE.name}
+          </div>
+          <div style={{ fontSize: isMobile ? 12 : 13, color: COLORS.textDim, marginTop: 4 }}>
+            {RACE.distance} · Post {RACE.postTime} · {RACE.runners} runners · Track {RACE.condition}
+          </div>
+        </div>
+        <button
+          onClick={() => setEditMode(!editMode)}
+          style={{
+            background: editMode ? COLORS.gold : "transparent",
+            color: editMode ? "#0a0a0a" : COLORS.gold,
+            border: `1px solid ${COLORS.gold}`,
+            padding: "6px 10px",
+            borderRadius: 4,
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+          }}
+        >
+          {editMode ? "Done" : "✎ Edit Odds"}
+        </button>
       </div>
-      <div
-        style={{
-          fontSize: isMobile ? 22 : 30,
-          fontWeight: 700,
-          color: COLORS.text,
-          marginTop: 4,
-          letterSpacing: 0.5,
-        }}
-      >
-        {RACE.name}
-      </div>
-      <div style={{ fontSize: isMobile ? 12 : 13, color: COLORS.textDim, marginTop: 4 }}>
-        {RACE.distance} · Post {RACE.postTime} · {RACE.runners} runners · Track {RACE.condition}
-      </div>
+      {(overrideCount > 0 || editMode) && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "6px 10px",
+            background: COLORS.panel2,
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: 4,
+            fontSize: 11,
+            color: COLORS.textDim,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            {overrideCount > 0 ? (
+              <>
+                <strong style={{ color: COLORS.gold }}>{overrideCount}</strong> odds edited
+                {tsLabel ? ` · last update ${tsLabel}` : ""}
+              </>
+            ) : (
+              <>Edit mode on. Tap any odds value in the Field tab to override.</>
+            )}
+          </span>
+          {overrideCount > 0 && (
+            <button
+              onClick={resetAll}
+              style={{
+                background: "transparent",
+                color: COLORS.red,
+                border: `1px solid ${COLORS.red}`,
+                padding: "3px 8px",
+                borderRadius: 3,
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -386,7 +520,64 @@ function ModelTab({ modeled, isMobile }) {
   );
 }
 
-function FieldTab({ modeled, isMobile }) {
+function OddsInput({ horse, setOdds }) {
+  const [val, setVal] = useState((horse.dec - 1).toString());
+  useEffect(() => {
+    setVal((horse.dec - 1).toString());
+  }, [horse.dec]);
+  const commit = () => {
+    const n = parseFloat(val);
+    if (isNaN(n) || n <= 0) return;
+    setOdds(horse.post, n + 1);
+  };
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <div
+        style={{
+          fontSize: 10,
+          color: COLORS.gold,
+          textTransform: "uppercase",
+          letterSpacing: 0.8,
+          fontWeight: 700,
+        }}
+      >
+        Odds /1
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.5"
+          min="0"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              commit();
+              e.target.blur();
+            }
+          }}
+          style={{
+            background: COLORS.bg,
+            border: `1px solid ${COLORS.gold}`,
+            color: COLORS.gold,
+            padding: "4px 6px",
+            borderRadius: 3,
+            fontSize: 14,
+            fontWeight: 700,
+            width: "100%",
+            minWidth: 0,
+            fontFamily: "inherit",
+          }}
+        />
+        <span style={{ color: COLORS.textDim, fontSize: 12 }}>/1</span>
+      </div>
+    </div>
+  );
+}
+
+function FieldTab({ modeled, isMobile, editMode, setOdds }) {
   const [sort, setSort] = useState("modelProb");
   const [expanded, setExpanded] = useState(null);
   const sorts = [
@@ -502,6 +693,7 @@ function FieldTab({ modeled, isMobile }) {
                   {h.jockeyHot && <Badge color={COLORS.amber}>Hot J</Badge>}
                   {h.lastYearCombo && <Badge color={COLORS.greenLight}>Repeat</Badge>}
                   {h.name === "So Happy" && <Badge color={COLORS.purple}>Steam</Badge>}
+                  {h.edited && <Badge color={COLORS.purple}>Edited</Badge>}
                 </div>
               </div>
 
@@ -513,7 +705,11 @@ function FieldTab({ modeled, isMobile }) {
                   gap: 8,
                 }}
               >
-                <StatBlock label="Odds" value={h.oddsDisplay} color={COLORS.gold} />
+                {editMode ? (
+                  <OddsInput horse={h} setOdds={setOdds} />
+                ) : (
+                  <StatBlock label="Odds" value={h.oddsDisplay} color={COLORS.gold} />
+                )}
                 <StatBlock
                   label="Beyer"
                   value={h.beyer ?? "—"}
@@ -906,11 +1102,19 @@ export default function App() {
   const w = useWindowWidth();
   const isMobile = w < 768;
   const [tab, setTab] = useState("model");
+  const [editMode, setEditMode] = useState(false);
+  const { overrides, setOdds, resetAll, updatedAt } = useCustomOdds();
 
   const modeled = useMemo(() => {
-    const built = buildModel(FIELD);
+    const adjusted = applyOverrides(FIELD, overrides);
+    const built = buildModel(adjusted);
     return monteCarlo(built, 10000);
-  }, []);
+  }, [overrides]);
+
+  const handleEditToggle = (next) => {
+    setEditMode(next);
+    if (next) setTab("field");
+  };
 
   return (
     <div
@@ -922,11 +1126,20 @@ export default function App() {
         paddingBottom: isMobile ? 72 : 0,
       }}
     >
-      <Header isMobile={isMobile} />
+      <Header
+        isMobile={isMobile}
+        editMode={editMode}
+        setEditMode={handleEditToggle}
+        updatedAt={updatedAt}
+        resetAll={resetAll}
+        overrideCount={Object.keys(overrides).length}
+      />
       {!isMobile && <TabBar tab={tab} setTab={setTab} isMobile={isMobile} />}
 
       {tab === "model" && <ModelTab modeled={modeled} isMobile={isMobile} />}
-      {tab === "field" && <FieldTab modeled={modeled} isMobile={isMobile} />}
+      {tab === "field" && (
+        <FieldTab modeled={modeled} isMobile={isMobile} editMode={editMode} setOdds={setOdds} />
+      )}
       {tab === "signals" && <SignalsTab modeled={modeled} isMobile={isMobile} />}
       {tab === "ticket" && <TicketTab modeled={modeled} isMobile={isMobile} />}
 
