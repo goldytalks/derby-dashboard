@@ -19,12 +19,12 @@ export const RACE = {
   paceScenario:
     "HOT. Six Speed (post 17) confirmed front-runner. Litmus Test (post 4) also speed. Hot early pace favors closers and stalkers positioned 4th-8th at Churchill Downs.",
   keySignal:
-    "So Happy moved from 15/1 ML to 5/1 live — largest sharp move in the field. Renegade faded from 4/1 ML to 6/1 — market actively fading the morning line favorite.",
+    "So Happy moved from 15/1 ML to 6/1 live — largest sharp move in the field. Chief Wallabee shortened from 8/1 ML to 6/1 — Mott/Alvarado combo getting hammered.",
 };
 
 export const FIELD = [
   {
-    post: 1, name: "Renegade", oddsDisplay: "6/1", dec: 7.0, mlDec: 5.0,
+    post: 1, name: "Renegade", oddsDisplay: "5/1", dec: 6.0, mlDec: 5.0,
     beyer: 101, equibase: 107, style: "closer", starts: 5, foreign: false,
     lastYearCombo: false, eliteJ: true, jDerby: 0, jWinPct: 0.18,
     eliteT: true, tDerby: 2, tWinPct: 0.18,
@@ -32,7 +32,7 @@ export const FIELD = [
     postGroup: "p1", color: "#dc2626",
     jockeyName: "Irad Ortiz Jr.", trainerName: "Todd Pletcher",
     jockeyHot: false,
-    mlMove: "FADING — drifted from 4/1 ML to 6/1. Market actively fading the morning line favorite.",
+    mlMove: "Live 5/1 — drifted from 4/1 ML and now stabilized as co-favorite. Money came back after early fade.",
     notes: "Post 1 is 0-for-40 since Ferdinand 1986. Closer on rail in 19-horse field = structural nightmare. Irad chose him over Further Ado and Commandment. Talent is real. Post is fatal for his running style.",
   },
   {
@@ -47,7 +47,7 @@ export const FIELD = [
     notes: "Won Wood Memorial but Beyer 91 fails the 100+ historical filter.",
   },
   {
-    post: 3, name: "Intrepido", oddsDisplay: "47/1", dec: 48.0, mlDec: 51.0,
+    post: 3, name: "Intrepido", oddsDisplay: "48/1", dec: 49.0, mlDec: 51.0,
     beyer: 85, equibase: 85, style: "stalker", starts: 4, foreign: false,
     lastYearCombo: false, eliteJ: false, jDerby: 0, jWinPct: 0.18,
     eliteT: false, tDerby: 0, tWinPct: 0.22,
@@ -92,7 +92,7 @@ export const FIELD = [
     notes: "Unbeaten. Best Fukuryu Stakes time in 20+ years. American-bred, sire record at Churchill. Post 7 is prime real estate. Japan form unverifiable. Exotic-only dart at 14/1.",
   },
   {
-    post: 8, name: "So Happy", oddsDisplay: "5/1", dec: 6.0, mlDec: 16.0,
+    post: 8, name: "So Happy", oddsDisplay: "6/1", dec: 7.0, mlDec: 16.0,
     beyer: 100, equibase: 100, style: "stalker", starts: 5, foreign: false,
     lastYearCombo: false, eliteJ: true, jDerby: 1, jWinPct: 0.12,
     eliteT: false, tDerby: 0, tWinPct: 0.18,
@@ -100,7 +100,7 @@ export const FIELD = [
     postGroup: "sweet", color: "#7c3aed",
     jockeyName: "Mike E. Smith", trainerName: "Mark Glatt",
     jockeyHot: false,
-    mlMove: "🔥 MASSIVE STEAM — 15/1 ML to 5/1 live. Largest sharp move in the field.",
+    mlMove: "🔥 STEAM — 15/1 ML to 6/1 live. Largest sharp move in the field (62% odds compression). Slight cool-off from earlier 5/1 but still loud.",
     notes: "ONLY horse to clear 100 across ALL FOUR major speed systems: Beyer 100, Brisnet 103, Equibase 100, TimeformUS 121. Post 8 historically excellent. Hall of Famer Mike Smith. The money move today is undeniable. Sire Runhappy stamina concern at 1.25mi is the only knock.",
   },
   {
@@ -126,14 +126,14 @@ export const FIELD = [
     notes: "2-for-2 at Churchill Downs. Beyer 88 fails the 100+ filter. 7-week layoff exceeds recent winner threshold.",
   },
   {
-    post: 12, name: "Chief Wallabee", oddsDisplay: "7/1", dec: 8.0, mlDec: 9.0,
+    post: 12, name: "Chief Wallabee", oddsDisplay: "6/1", dec: 7.0, mlDec: 9.0,
     beyer: 100, equibase: 100, style: "stalker", starts: 3, foreign: false,
     lastYearCombo: true, eliteJ: true, jDerby: 1, jWinPct: 0.15,
     eliteT: true, tDerby: 1, tWinPct: 0.17,
     baffert: false, bounceRisk: false, formCollapse: false, maiden: false,
     postGroup: "sweet", color: "#16a34a",
     jockeyName: "Junior Alvarado", trainerName: "William I. Mott",
-    jockeyHot: false, mlMove: "Stable at 7/1",
+    jockeyHot: false, mlMove: "🔥 Shortened from 8/1 ML to 6/1 — sharp money on the Mott/Alvarado combo that won last year.",
     notes: "EXACT same trainer+jockey (Mott+Alvarado) that won this race last year with Sovereignty. 100 Beyer. Post 12 ideal. First time blinkers. Only 3 career starts. Mott is deliberate — if he's running him, he's ready.",
   },
   {
@@ -160,7 +160,7 @@ export const FIELD = [
     notes: "Prat (25% win rate — highest jockey in field) chose this over Commandment. Brown (24% trainer rate) bringing him = endorsement. jockeyHot=true (Prat won 2 races on undercard today). FAILS: Beyer only 90 (below 100+ filter), only 2 career starts (fails since 1883), Brown 0-for-14 Derby career.",
   },
   {
-    post: 16, name: "Pavlovian", oddsDisplay: "47/1", dec: 48.0, mlDec: 31.0,
+    post: 16, name: "Pavlovian", oddsDisplay: "48/1", dec: 49.0, mlDec: 31.0,
     beyer: 85, equibase: 85, style: "speed", starts: 10, foreign: false,
     lastYearCombo: false, eliteJ: false, jDerby: 0, jWinPct: 0.14,
     eliteT: false, tDerby: 0, tWinPct: 0.10,
@@ -171,7 +171,7 @@ export const FIELD = [
     notes: "Lost by a head to Emerging Market in Louisiana Derby. Below Beyer threshold.",
   },
   {
-    post: 17, name: "Six Speed", oddsDisplay: "35/1", dec: 36.0, mlDec: 51.0,
+    post: 17, name: "Six Speed", oddsDisplay: "36/1", dec: 37.0, mlDec: 51.0,
     beyer: 84, equibase: 84, style: "speed", starts: 5, foreign: false,
     lastYearCombo: false, eliteJ: false, jDerby: 0, jWinPct: 0.15,
     eliteT: false, tDerby: 0, tWinPct: 0.0,
@@ -217,7 +217,7 @@ export const FIELD = [
     notes: "Gray gelding. Historical bias against gray geldings in Derby. Below Beyer threshold.",
   },
   {
-    post: 22, name: "Ocelli", oddsDisplay: "77/1", dec: 78.0, mlDec: 51.0,
+    post: 22, name: "Ocelli", oddsDisplay: "76/1", dec: 77.0, mlDec: 51.0,
     beyer: 82, equibase: 82, style: "closer", starts: 7, foreign: false,
     lastYearCombo: false, eliteJ: false, jDerby: 0, jWinPct: 0.13,
     eliteT: false, tDerby: 0, tWinPct: 0.13,
@@ -228,7 +228,7 @@ export const FIELD = [
     notes: "Maiden horse. No maiden has won the Kentucky Derby since 1882. Replacement draw.",
   },
   {
-    post: 23, name: "Robusta", oddsDisplay: "76/1", dec: 77.0, mlDec: 51.0,
+    post: 23, name: "Robusta", oddsDisplay: "75/1", dec: 76.0, mlDec: 51.0,
     beyer: 80, equibase: 80, style: "speed", starts: 5, foreign: false,
     lastYearCombo: false, eliteJ: false, jDerby: 0, jWinPct: 0.16,
     eliteT: false, tDerby: 0, tWinPct: 0.10,
