@@ -1,34 +1,22 @@
-# Kentucky Derby 2026 Dashboard
+# Novig Booth: Get Capped
 
-Mobile-first analytics dashboard for the 152nd Kentucky Derby. React + Vite, deployable to Vercel.
+A Cup photobooth for Novig, the peer to peer prediction market with zero vig. Snap a selfie, the booth dresses you in your nation's colors with one signature prop, and your trading slip gets printed on a shareable poster card with a promo code and a scannable QR.
 
-## Run locally
+## Deploy
 
-```
+Run `vercel`, then add `GEMINI_API_KEY` in the project settings. Done.
+
+## Local
+
+```bash
 npm install
 npm run dev
 ```
 
-Opens at http://localhost:5173
+No env vars needed to demo: without `GEMINI_API_KEY` the API runs in mock mode and returns your original photo after a short wait, so the full flow works end to end.
 
-## Deploy to Vercel
+## Notes
 
-```
-npx vercel --prod
-```
-
-Connect to a GitHub repo for auto-deploys on every push.
-
-## Redeploy after changes
-
-```
-git add . && git commit -m "update" && git push
-```
-
-## Data sources
-
-- Live odds: FanDuel Racing tote (snapshot 5:58 PM ET, May 2 2026)
-- Beyer Speed Figures: Daily Racing Form
-- Post position history: Churchill Downs 40-year archive
-- Future live data: theracingapi.com North America add-on (£49.99/mo)
-- Live odds proxy: theOddsAPI.com via Vercel serverless function
+- `app/api/generate/route.ts` keeps every upload in memory only. Nothing is stored, so there is nothing to delete.
+- Card compositing is pure canvas in `lib/composite.ts`, the ordered dither lives in `lib/dither.ts`, country themes and costume prompts in `lib/prompts.ts`, and all product copy in `lib/copy.ts`.
+- Formats: Story 1080x1920 and Square 1080x1080, both downloadable as PNG.
