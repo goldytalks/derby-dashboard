@@ -18,5 +18,5 @@ No env vars needed to demo: without `GEMINI_API_KEY` the API runs in mock mode a
 ## Notes
 
 - `app/api/generate/route.ts` keeps every upload in memory only. Nothing is stored, so there is nothing to delete.
-- Card compositing is pure canvas in `lib/composite.ts`, the ordered dither lives in `lib/dither.ts`, country themes and costume prompts in `lib/prompts.ts`, and all product copy in `lib/copy.ts`.
+- Card compositing is pure canvas in `lib/composite.ts` with the portrait printed as a real photo, country themes and costume prompts in `lib/prompts.ts`, and all product copy in `lib/copy.ts`.
 - Formats: Story 1080x1920 and Square 1080x1080, both downloadable as PNG.

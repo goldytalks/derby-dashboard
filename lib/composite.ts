@@ -2,7 +2,6 @@
 // qrcode package, which renders the promo QR into an offscreen canvas.
 
 import QRCode from "qrcode";
-import { ditherDraw, mixTowardWhite } from "@/lib/dither";
 import { COOKED_THEME, type CountryTheme } from "@/lib/prompts";
 import type { SlipStatus } from "@/lib/copy";
 
@@ -31,6 +30,41 @@ const NEAR_BLACK = "#0A0A10";
 const TICKET = "#121216";
 const NOVIG_BLUE = "#1CA3F5";
 const MARGIN = 76;
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function mixTowardWhite(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  const to2 = (c: number) => c.toString(16).padStart(2, "0");
+  return `#${to2(mix(r))}${to2(mix(g))}${to2(mix(b))}`;
+}
+
+// Straight photobooth print: cover crop the photo into the region,
+// biased slightly toward the top so faces stay in frame.
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  source: HTMLImageElement | HTMLCanvasElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+) {
+  const sw =
+    source instanceof HTMLImageElement ? source.naturalWidth : source.width;
+  const sh =
+    source instanceof HTMLImageElement ? source.naturalHeight : source.height;
+  if (!sw || !sh) return;
+  const scale = Math.max(w / sw, h / sh);
+  const srcW = w / scale;
+  const srcH = h / scale;
+  const sx = (sw - srcW) / 2;
+  const sy = (sh - srcH) * 0.38;
+  ctx.drawImage(source, sx, sy, srcW, srcH, x, y, w, h);
+}
 
 interface FontSet {
   display: string;
@@ -188,6 +222,9 @@ function drawRailText(
   ctx.fillStyle = color;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+  // Soft shadow keeps the rails readable over bright photos.
+  ctx.shadowColor = "rgba(10, 10, 16, 0.75)";
+  ctx.shadowBlur = 10;
   ctx.fillText(text, 0, 0);
   setLetterSpacing(ctx, "0px");
   ctx.restore();
@@ -350,27 +387,11 @@ export async function renderCard(
   ctx.fillStyle = NEAR_BLACK;
   ctx.fillRect(0, topH, W, H - topH);
 
-  // ---- portrait with ordered dither, duotone, scanlines ----
+  // ---- portrait, real photo, no filters ----
   const portraitH = H - topH;
   if (opts.portrait) {
-    ditherDraw(
-      ctx,
-      opts.portrait,
-      0,
-      topH,
-      W,
-      portraitH,
-      NEAR_BLACK,
-      lightTint,
-      6
-    );
+    drawImageCover(ctx, opts.portrait, 0, topH, W, portraitH);
   }
-  ctx.save();
-  ctx.fillStyle = "rgba(0, 0, 0, 0.07)";
-  for (let y = topH; y < H; y += 7) {
-    ctx.fillRect(0, y, W, 1);
-  }
-  ctx.restore();
 
   // ---- type stack in the top block ----
   const eyebrow = `${opts.slip.matchup}  •  ${opts.slip.market}`.toUpperCase();
