@@ -109,6 +109,36 @@ export const COUNTRIES: CountryTheme[] = [
     costume:
       "a red kit with a mountie hat, raising a bottle of maple syrup in celebration",
   },
+  {
+    code: "COL",
+    name: "Colombia",
+    flag: "\u{1F1E8}\u{1F1F4}",
+    bg: "#FCD116",
+    ink: "#12307B",
+    seed: "CAFETERO-10",
+    costume:
+      "a canary yellow kit with a woven sombrero vueltiao, a red and blue carnival feather boa, raising a cup of Colombian coffee like a trophy",
+  },
+  {
+    code: "GHA",
+    name: "Ghana",
+    flag: "\u{1F1EC}\u{1F1ED}",
+    bg: "#E8B217",
+    ink: "#151512",
+    seed: "KENTE-08",
+    costume:
+      "a white kit with a bright kente cloth sash across the chest, a gold Ashanti crown, shaking a beaded calabash rattle, black star confetti",
+  },
+  {
+    code: "CPV",
+    name: "Cape Verde",
+    flag: "\u{1F1E8}\u{1F1FB}",
+    bg: "#0057C8",
+    ink: "#FFFFFF",
+    seed: "SHARK-24",
+    costume:
+      "a deep blue kit with a playful shark fin hood, holding up a fresh coconut, golden island beach light and ocean spray",
+  },
 ];
 
 // COOKED status repaints any theme with these colors.

@@ -23,6 +23,12 @@ import {
 import { renderCard, type CardFormat, type Slip } from "@/lib/composite";
 import { confettiBurst } from "@/lib/confetti";
 import { logEvent } from "@/lib/analytics";
+import {
+  DEMO_STAKE,
+  TODAYS_SLATE,
+  type SlateGame,
+  type SlateSide,
+} from "@/lib/slate";
 
 type Screen = "landing" | "capture" | "setup" | "result";
 
@@ -102,6 +108,7 @@ export default function BoothPage() {
     toWin: "117",
   });
   const [toWinTouched, setToWinTouched] = useState(false);
+  const [slateChoice, setSlateChoice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingLine, setLoadingLine] = useState(LOADING_LINES[0]);
   const [genError, setGenError] = useState<string | null>(null);
@@ -128,9 +135,25 @@ export default function BoothPage() {
         return next;
       });
       if (key === "toWin") setToWinTouched(true);
+      setSlateChoice(null);
     },
     [toWinTouched]
   );
+
+  const pickSlateSide = useCallback((game: SlateGame, side: SlateSide) => {
+    setSlip({
+      matchup: game.matchup,
+      market: "Moneyline",
+      side: side.side,
+      odds: side.odds,
+      stake: DEMO_STAKE,
+      toWin: computeToWin(side.odds, DEMO_STAKE) || "",
+    });
+    setToWinTouched(false);
+    setCountryCode(side.countryCode);
+    setSlateChoice(`${game.id}:${side.countryCode}`);
+    logEvent("slate_pick", { game: game.id, side: side.countryCode });
+  }, []);
 
   const acceptPhoto = useCallback(async (source: string, from: string) => {
     try {
@@ -365,6 +388,40 @@ export default function BoothPage() {
           </h2>
 
           <div className="ticket-card">
+            <span className="label">Today&apos;s slate, $100 trade</span>
+            <div className="slate">
+              {TODAYS_SLATE.map((game) => (
+                <div className="slate-game" key={game.id}>
+                  <p className="slate-matchup">
+                    {game.matchup}
+                    {game.live && (
+                      <span className="live-tag" aria-label="Live now">
+                        LIVE
+                      </span>
+                    )}
+                  </p>
+                  <div className="slate-sides">
+                    {game.sides.map((s) => (
+                      <button
+                        key={s.countryCode}
+                        className="slate-pill"
+                        aria-pressed={slateChoice === `${game.id}:${s.countryCode}`}
+                        onClick={() => pickSlateSide(game, s)}
+                      >
+                        <span>{s.side}</span>
+                        <strong>{s.odds}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="note slim">
+              Tap a side to load the slip. Demo odds, edit anything below.
+            </p>
+          </div>
+
+          <div className="ticket-card">
             <span className="label">Nation</span>
             <div className="chip-grid" role="group" aria-label="Pick your nation">
               {COUNTRIES.map((c) => (
@@ -536,6 +593,10 @@ export default function BoothPage() {
           </div>
         </section>
       )}
+
+      <footer className="foot">
+        Peer to peer. Zero vig. <span>novig.us</span>
+      </footer>
 
       {loading && (
         <div className="overlay" role="status" aria-live="polite">
