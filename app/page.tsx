@@ -188,15 +188,32 @@ export default function BoothPage() {
     }, 640);
 
     try {
-      const request = fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64: photo,
-          countryCode,
-          format,
-        }),
-      }).then(async (res) => ({ ok: res.ok, body: await res.json() }));
+      // Static demo hosts have no API route. When the endpoint is missing
+      // or unreachable, run mock mode right here in the browser so the
+      // booth still works end to end.
+      const request = (async () => {
+        try {
+          const res = await fetch("/api/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imageBase64: photo,
+              countryCode,
+              format,
+            }),
+          });
+          const isJson = res.headers
+            .get("content-type")
+            ?.includes("application/json");
+          if (isJson) {
+            return { ok: res.ok, body: await res.json() };
+          }
+        } catch {
+          // Network failure falls through to the local mock.
+        }
+        await sleep(2000);
+        return { ok: true, body: { imageBase64: photo, mock: true } };
+      })();
 
       // Minimum theater time even when the model comes back fast.
       const [result] = await Promise.all([request, sleep(3200)]);
