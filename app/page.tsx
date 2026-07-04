@@ -193,6 +193,9 @@ export default function BoothPage() {
       // booth still works end to end.
       const request = (async () => {
         try {
+          if (process.env.NEXT_PUBLIC_STATIC_DEMO === "1") {
+            throw new Error("static_demo");
+          }
           const res = await fetch("/api/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

@@ -14,7 +14,7 @@ PREFIX="${1:-https://raw.githack.com/goldytalks/derby-dashboard/refs/heads/${BRA
 mv app/api .demo-api-hold
 trap 'mv .demo-api-hold app/api' EXIT
 
-NEXT_STATIC_DEMO=1 NEXT_DEMO_ASSET_PREFIX="$PREFIX" npx next build
+NEXT_STATIC_DEMO=1 NEXT_PUBLIC_STATIC_DEMO=1 NEXT_DEMO_ASSET_PREFIX="$PREFIX" npx next build
 
 rm -rf docs
 cp -R out docs
