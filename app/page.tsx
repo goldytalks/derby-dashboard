@@ -61,9 +61,9 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-// Lightweight sanity check standing in for face detection in v1:
-// reject tiny images and extreme aspect ratios before spending an API call.
-function passesPhotoSanity(img: HTMLImageElement): boolean {
+// This is only a size and shape check, not face detection. It avoids sending
+// tiny or extremely cropped images that cannot produce a useful card.
+function passesPhotoShapeCheck(img: HTMLImageElement): boolean {
   const w = img.naturalWidth;
   const h = img.naturalHeight;
   if (w < 320 || h < 320) return false;
@@ -158,9 +158,9 @@ export default function BoothPage() {
   const acceptPhoto = useCallback(async (source: string, from: string) => {
     try {
       const img = await loadImage(source);
-      if (!passesPhotoSanity(img)) {
+      if (!passesPhotoShapeCheck(img)) {
         setGenError(
-          "We could not make out a face in that one. Try a closer, clearer photo."
+          "That photo is too small or unusually cropped. Try a clearer photo with more room around your face."
         );
         return;
       }
@@ -304,8 +304,10 @@ export default function BoothPage() {
       const link = document.createElement("a");
       link.href = url;
       link.download = `novig-booth-${country.code.toLowerCase()}.png`;
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       logEvent("download", { country: country.code, format });
     }, "image/png");
   }, [country.code, format]);
@@ -345,8 +347,9 @@ export default function BoothPage() {
           return;
         }
         await handleCopyCaption();
-      } catch {
-        // User closed the share sheet. Nothing to do.
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        await handleCopyCaption();
       }
     }, "image/png");
   }, [caption, handleCopyCaption]);
@@ -449,7 +452,10 @@ export default function BoothPage() {
                   key={c.code}
                   className="chip"
                   aria-pressed={c.code === countryCode}
-                  onClick={() => setCountryCode(c.code)}
+                  onClick={() => {
+                    setCountryCode(c.code);
+                    setSlateChoice(null);
+                  }}
                 >
                   <span aria-hidden="true">{c.flag}</span>
                   {c.code}
@@ -581,7 +587,8 @@ export default function BoothPage() {
           {isMock && (
             <p className="note">
               Demo mode: no AI key configured, so your original photo came back
-              untouched. Add GEMINI_API_KEY for the full fit.
+              untouched and was not sent to Google. Add GEMINI_API_KEY for the
+              full fit.
             </p>
           )}
           <canvas
@@ -747,6 +754,12 @@ function CaptureScreen({ onPhoto, onBack, error }: CaptureScreenProps) {
         </p>
       )}
 
+      <p className="note slim">
+        Privacy: this app does not save your photo. If AI mode is enabled, the
+        photo is sent to Google Gemini for image editing and handled under the
+        connected Gemini API plan.
+      </p>
+
       <div className="btn-row">
         {!cameraFailed && (
           <button
@@ -767,10 +780,8 @@ function CaptureScreen({ onPhoto, onBack, error }: CaptureScreenProps) {
           ref={fileRef}
           type="file"
           accept="image/jpeg,image/png"
-          className="visually-hidden"
+          hidden
           onChange={onFile}
-          aria-label="Upload a photo"
-          tabIndex={-1}
         />
         <button className="btn btn-ghost" onClick={onBack}>
           Back

@@ -99,11 +99,11 @@
     can use to recreate it from zero.
   </p>
 
-  <span class="pill">Next.js 14</span>
+  <span class="pill">Next.js 16</span>
   <span class="pill">TypeScript</span>
   <span class="pill">Pure canvas</span>
   <span class="pill">Gemini image edit</span>
-  <span class="pill">Zero persistence</span>
+  <span class="pill">No app storage</span>
   <span class="pill">Vercel ready</span>
 
   <div class="hazard" aria-hidden="true"></div>
@@ -144,7 +144,7 @@
     <tr><td><code>app/page.tsx</code></td><td>The whole product flow as one client component: landing, capture, setup, result, loading overlay, slot reveal, share actions.</td></tr>
     <tr><td><code>app/layout.tsx</code></td><td>Fonts via next/font/google (Archivo Black display, Space Grotesk data, Archivo body) exposed as CSS variables, plus metadata.</td></tr>
     <tr><td><code>app/globals.css</code></td><td>Design tokens, dark UI, ticket cards with punched side notches, hazard dividers, focus states, responsive to 360px.</td></tr>
-    <tr><td><code>app/api/generate/route.ts</code></td><td>POST endpoint. Validates the photo, calls the Gemini image edit model, returns the edited portrait. Mock mode when no key. Nothing is ever stored.</td></tr>
+    <tr><td><code>app/api/generate/route.ts</code></td><td>POST endpoint. Validates the photo, calls the Gemini image edit model, returns the edited portrait. Mock mode when no key. The app does not write photos to storage.</td></tr>
     <tr><td><code>lib/composite.ts</code></td><td>Pure canvas card compositor. Every pixel of the poster card is drawn here.</td></tr>
     <tr><td><code>lib/prompts.ts</code></td><td>Thirteen nation themes (color, ink, flag, seed, costume) and the buildPrompt template.</td></tr>
     <tr><td><code>lib/slate.ts</code></td><td>Today's demo games and odds. Tapping a side loads a complete $100 slip.</td></tr>
@@ -178,10 +178,10 @@
     </ul>
     <h3>Generation and privacy</h3>
     <ul>
-      <li>The API accepts { imageBase64, countryCode, format }, checks mime (jpeg or png) and size (8MB), and calls gemini-2.5-flash-image with a costume prompt that keeps the exact face unchanged and forbids logos, crests, text, and real athletes.</li>
+      <li>The API accepts { imageBase64, countryCode, format }, checks mime (jpeg or png) and decoded size (3MB), and calls gemini-3.1-flash-image with a costume prompt that keeps the face unchanged and forbids logos, crests, text, and real athletes.</li>
       <li>No key present: the server waits 2s and echoes the photo back with { mock: true }.</li>
       <li>No API present at all (static hosting): the browser detects the missing endpoint and runs the same mock locally.</li>
-      <li>Nothing is persisted anywhere, ever. Uploads live in request memory and fall out of scope.</li>
+      <li>The app does not write uploads to a database or file store. In AI mode, the photo is processed by Google Gemini and is subject to the connected API plan's logging and retention terms.</li>
     </ul>
   </div>
 
@@ -206,8 +206,8 @@
   <h2 id="done">5. What was done</h2>
   <div class="card">
     <ol>
-      <li>Wiped the previous repo down to .git and .gitignore, scaffolded Next.js 14 App Router in TypeScript from scratch.</li>
-      <li>Built the full flow, the canvas compositor, ten nation themes, the Gemini route with mock mode, fonts, confetti, and share actions.</li>
+      <li>Wiped the previous repo down to .git and .gitignore, scaffolded the Next.js App Router in TypeScript from scratch.</li>
+      <li>Built the full flow, the canvas compositor, thirteen nation themes, the Gemini route with mock mode, fonts, confetti, and share actions.</li>
       <li>Verified in the browser and caught a silent canvas font failure and a type stack overflow; fixed both (pitfalls 1 and 2).</li>
       <li>Made the QR render at an integer pixels per module scale so it stays scannable (pitfall 3), then proved it decodes.</li>
       <li>Added today's slate with three preset games and both sides tappable at demo odds, auto filling a $100 slip.</li>
@@ -257,7 +257,7 @@
 Novig, a peer to peer sports prediction market. A user snaps a selfie, an AI
 image model dresses them in their nation's colors with one signature prop, and
 their trading slip is composited onto a shareable poster card with a promo code
-and QR. Ship a production ready Next.js 14 App Router project in TypeScript,
+and QR. Ship a production ready Next.js 16 App Router project in TypeScript,
 deployable to Vercel with zero config. Build the complete project, all files,
 no placeholders.
 
@@ -346,11 +346,15 @@ or watermarks. Do not depict any real athlete."
 
 API (app/api/generate/route.ts)
 POST { imageBase64 data URL, countryCode, format }. Validate mime image/jpeg
-or image/png and size under 8MB. Call gemini-2.5-flash-image via the
+or image/png and decoded size under 3MB so base64 JSON stays below Vercel's
+4.5MB request and response payload limit. Call gemini-3.1-flash-image via the
 generativelanguage REST API with the photo plus buildPrompt(country), key from
 process.env.GEMINI_API_KEY. Return { imageBase64 } of the edited portrait.
+Request image only at 1K and match the chosen 9:16 or 1:1 aspect ratio.
 Treat a missing image part, a block reason, or a safety finish reason as a
-friendly 422 retry message. Never persist anything. maxDuration 30. If the key
+friendly 422 retry message. Do not write uploads to app storage. Clearly tell
+users that AI mode sends their photo to Google and that Google handles it under
+the connected Gemini API plan. maxDuration 30. If the key
 is missing, MOCK MODE: wait 2 seconds, return the original photo with
 { mock: true }. On the client, if the endpoint returns non JSON or the fetch
 fails (static hosting), fall back to the same mock behavior in the browser.
@@ -404,10 +408,12 @@ dashes appear nowhere in the repo.</code></pre>
     <ol>
       <li><span class="warn">Canvas fonts fail silently.</span> ctx.font keeps its previous value if the assignment is invalid. next/font can emit a fallback list containing an invalid entry (a two word fallback like Arial Black got serialized in a way that broke the whole font-family list), which made every headline render tiny in the wrong face while everything still "worked". Fix: use single word fallbacks in next/font, and in the compositor take only the first family from the CSS variable and append your own known good fallbacks. Verify by rendering and looking at the PNG.</li>
       <li><span class="warn">Shrink to fit must clamp both axes.</span> Fitting each line to the card width is not enough; the stacked heights can overflow the color block on the square format. Compute the stack height and scale every size down proportionally when it exceeds the room.</li>
-      <li><span class="warn">Never resample a QR.</span> Scaling a rendered QR to a fractional size antialiases the modules and can break scanning. Ask the encoder for the module count, pick the largest integer scale that fits the chip, render at exactly that size, draw 1:1, and prove it by decoding the final PNG.</li>
+      <li><span class="warn">Never resample a QR.</span> Scaling a rendered QR to a fractional size antialiases the modules and can break scanning. Include a four module quiet zone, pick the largest integer scale that fits the chip, render at exactly that size, draw 1:1, and prove it by decoding the final PNG.</li>
       <li><span class="warn">Wait for fonts before canvas.</span> Measure and draw only after document.fonts resolves or the first render uses fallback metrics.</li>
       <li><span class="warn">Headless containers have no camera.</span> getUserMedia fails even with fake device flags in some environments. Make the upload path first class and test the denial path; test real capture on a phone.</li>
       <li><span class="warn">Static hosts have no API.</span> If you want the demo to run on a CDN, detect the missing endpoint (non JSON response or failed fetch) and run mock mode in the browser.</li>
+      <li><span class="warn">Vercel payloads stop at 4.5MB.</span> A raw 8MB image becomes larger when base64 encoded and cannot reach the function. Keep decoded request and response images at 3MB or less, or move media through direct storage uploads.</li>
+      <li><span class="warn">No app storage is not zero retention.</span> The app does not save photos, but an enabled AI request sends the photo to Google Gemini. Disclose that processing and configure the Gemini project for the retention policy you need.</li>
       <li><span class="warn">Copy rules are grep rules.</span> Banned words and punctuation sneak in through comments and docs. Enforce with repo wide greps, not memory.</li>
     </ol>
   </div>

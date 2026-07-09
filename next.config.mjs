@@ -5,6 +5,9 @@ const staticDemo = process.env.NEXT_STATIC_DEMO === "1";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  turbopack: {
+    root: process.cwd(),
+  },
   ...(staticDemo
     ? {
         output: "export",

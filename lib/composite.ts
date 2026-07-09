@@ -124,13 +124,17 @@ async function getQrCanvas(
   const text = `https://novig.us/?code=${encodeURIComponent(code)}`;
   const modules = QRCode.create(text, { errorCorrectionLevel: "M" }).modules
     .size;
-  const scale = Math.max(2, Math.floor(maxSize / modules));
+  const quietZoneModules = 4;
+  const scale = Math.max(
+    2,
+    Math.floor(maxSize / (modules + quietZoneModules * 2))
+  );
   const cacheKey = `${code}:${scale}`;
   const hit = qrCache.get(cacheKey);
   if (hit) return hit;
   const canvas = document.createElement("canvas");
   await QRCode.toCanvas(canvas, text, {
-    margin: 0,
+    margin: quietZoneModules,
     scale,
     errorCorrectionLevel: "M",
     color: { dark: "#0E0E12", light: "#FFFFFF" },
