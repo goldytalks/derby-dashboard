@@ -616,6 +616,9 @@ export default function BoothPage() {
 
       <footer className="foot">
         Peer to peer. Zero vig. <span>novig.us</span>
+        <a className="foot-link" href="how-it-was-built.html">
+          How it was built
+        </a>
       </footer>
 
       {loading && (

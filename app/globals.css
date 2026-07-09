@@ -514,6 +514,12 @@ select {
   color: var(--blue);
 }
 
+.foot-link {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+}
+
 .result-actions {
   display: grid;
   grid-template-columns: 1fr;
