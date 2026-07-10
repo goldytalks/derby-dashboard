@@ -344,6 +344,18 @@ check(
   new RegExp(`^AI_GATEWAY_IMAGE_MODEL=${DEFAULT_GATEWAY_IMAGE_MODEL.replaceAll("/", "\\/")}$`, "m").test(envExample),
   `${ENV_EXAMPLE_PATH} does not default to ${DEFAULT_GATEWAY_IMAGE_MODEL}.`
 );
+check(
+  route.includes("https://ai-gateway.vercel.sh/v1/credits")
+    && route.includes("https://ai-gateway.vercel.sh/v1/models")
+    && /balance\s*>\s*0/.test(route)
+    && /model\.type\s*===\s*["']image["']/.test(route),
+  `${ROUTE_PATH} Gateway readiness must authenticate against credits and verify the configured image model.`
+);
+check(
+  !route.includes("ai-gateway.vercel.sh/v1/chat/completions")
+    && !route.includes("AI_GATEWAY_PREFLIGHT_MODEL"),
+  `${ROUTE_PATH} still uses the paid text-model compatibility probe.`
+);
 
 // Release proof must belong to this build and this full prompt/provider configuration.
 for (const requiredBinding of [

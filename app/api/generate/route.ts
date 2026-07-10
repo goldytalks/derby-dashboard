@@ -41,8 +41,8 @@ const CANARY_INPUT_PATH = join(
 );
 const GEMINI_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
 const GATEWAY_MODEL = process.env.AI_GATEWAY_IMAGE_MODEL || "bfl/flux-2-klein-4b";
-const GATEWAY_PREFLIGHT_MODEL = process.env.AI_GATEWAY_PREFLIGHT_MODEL || "google/gemini-3.1-flash-lite";
-const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
+const GATEWAY_CREDITS_URL = "https://ai-gateway.vercel.sh/v1/credits";
+const GATEWAY_MODELS_URL = "https://ai-gateway.vercel.sh/v1/models";
 const GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 
 type Provider = "gateway" | "gemini";
@@ -233,6 +233,7 @@ function verificationBinding(
         aspectRatio: "1:1",
         maxRetries: 0,
         providerRouting: "gateway-default-bfl",
+        readinessProbe: "authenticated-credits-plus-image-model-metadata",
       }
     : {
         endpoint: GEMINI_INTERACTIONS_URL,
@@ -591,25 +592,38 @@ async function providerIsReachable(
   try {
     if (provider === "gateway") {
       if (!gatewayToken) return false;
-      const response = await fetch(GATEWAY_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${gatewayToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: GATEWAY_PREFLIGHT_MODEL,
-          messages: [{ role: "user", content: "Reply OK." }],
-          max_tokens: 1,
-          stream: false,
-          providerOptions: {
-            gateway: { order: ["vertex", "google"] },
-          },
+      const headers = { Authorization: `Bearer ${gatewayToken}` };
+      const modelPath = GATEWAY_MODEL
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/");
+      const [creditsResponse, modelResponse] = await Promise.all([
+        fetch(GATEWAY_CREDITS_URL, {
+          headers,
+          cache: "no-store",
+          signal: controller.signal,
         }),
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      return response.ok;
+        fetch(`${GATEWAY_MODELS_URL}/${modelPath}`, {
+          headers,
+          cache: "no-store",
+          signal: controller.signal,
+        }),
+      ]);
+      if (!creditsResponse.ok || !modelResponse.ok) return false;
+
+      const [credits, model] = await Promise.all([
+        parseJsonResponse(creditsResponse),
+        parseJsonResponse(modelResponse),
+      ]);
+      const balance = isRecord(credits)
+        && (typeof credits.balance === "string" || typeof credits.balance === "number")
+        ? Number(credits.balance)
+        : Number.NaN;
+      return Number.isFinite(balance)
+        && balance > 0
+        && isRecord(model)
+        && model.id === GATEWAY_MODEL
+        && model.type === "image";
     }
 
     const model = process.env.GEMINI_PREFLIGHT_MODEL || "gemini-3.1-flash-lite";
