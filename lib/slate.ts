@@ -97,19 +97,68 @@ export const FALLBACK_ELIGIBLE_COUNTRY_CODES = [
   "SUI",
 ];
 
-export const CFB_TEAM_CODES = ["USC", "ALA", "UGA", "UF", "LSU"];
+export const CFB_TEAM_CODES = [
+  "USC",
+  "SJSU",
+  "ALA",
+  "ECAR",
+  "UGA",
+  "TSU",
+  "UF",
+  "FAU",
+  "LSU",
+  "CLEM",
+];
+
+type ScheduledGame = Omit<LiveGame, "status" | "state">;
+
+export function deriveScheduledState(
+  startTime: string,
+  now = new Date(),
+  estimatedDurationMinutes = 210
+): Pick<LiveGame, "status" | "state"> {
+  const start = new Date(startTime).getTime();
+  if (!Number.isFinite(start)) return { status: "Scheduled", state: "pre" };
+
+  const current = now.getTime();
+  if (current < start) return { status: "Scheduled", state: "pre" };
+
+  const estimatedEnd = start + estimatedDurationMinutes * 60_000;
+  if (current < estimatedEnd) return { status: "In progress", state: "in" };
+
+  return { status: "Completed", state: "post" };
+}
+
+function materializeSchedule(
+  scheduledGames: ScheduledGame[],
+  now: Date,
+  estimatedDurationMinutes: number
+): LiveGame[] {
+  return scheduledGames.map((game) => ({
+    ...game,
+    ...deriveScheduledState(game.startTime, now, estimatedDurationMinutes),
+  }));
+}
+
+function activeGameId(games: LiveGame[]): string {
+  const activeGame =
+    games.find((game) => game.state === "in") ??
+    games.find((game) => game.state === "pre") ??
+    games.at(-1);
+
+  if (!activeGame) throw new Error("Cannot select an active game from an empty slate.");
+  return activeGame.id;
+}
 
 export function cfbOpenersSlate(now = new Date()): SlateResponse {
-  const games: LiveGame[] = [
+  const scheduledGames: ScheduledGame[] = [
     {
       id: "usc-san-jose-state-2026-08-29",
       matchup: "USC vs San José State",
       shortName: "USC vs SJSU",
       startTime: "2026-08-29T19:00:00.000Z",
       round: "Season Opener",
-      status: "Scheduled",
-      state: "pre",
-      venue: "Los Angeles Memorial Coliseum",
+      venue: "United Airlines Field at Los Angeles Memorial Coliseum",
       location: "Los Angeles, California",
       broadcasts: ["NBC"],
       home: makeSide("USC", "USC", -450, "home"),
@@ -119,16 +168,14 @@ export function cfbOpenersSlate(now = new Date()): SlateResponse {
     {
       id: "alabama-east-carolina-2026-09-05",
       matchup: "Alabama vs East Carolina",
-      shortName: "ALA vs ECU",
+      shortName: "ALA vs ECAR",
       startTime: "2026-09-05T16:00:00.000Z",
       round: "Season Opener",
-      status: "Scheduled",
-      state: "pre",
-      venue: "Bryant-Denny Stadium",
+      venue: "Saban Field at Bryant-Denny Stadium",
       location: "Tuscaloosa, Alabama",
-      broadcasts: [],
+      broadcasts: ["ABC"],
       home: makeSide("Alabama", "ALA", -550, "home"),
-      away: makeSide("East Carolina", "ECU", 375, "away"),
+      away: makeSide("East Carolina", "ECAR", 375, "away"),
       source: "Alabama Athletics schedule / demo line",
     },
     {
@@ -137,11 +184,9 @@ export function cfbOpenersSlate(now = new Date()): SlateResponse {
       shortName: "UGA vs TSU",
       startTime: "2026-09-05T19:00:00.000Z",
       round: "Season Opener",
-      status: "Scheduled",
-      state: "pre",
-      venue: "Sanford Stadium",
+      venue: "Dooley Field at Sanford Stadium",
       location: "Athens, Georgia",
-      broadcasts: [],
+      broadcasts: ["SECN+"],
       home: makeSide("Georgia", "UGA", -900, "home"),
       away: makeSide("Tennessee State", "TSU", 550, "away"),
       source: "Georgia Athletics schedule / demo line",
@@ -152,11 +197,9 @@ export function cfbOpenersSlate(now = new Date()): SlateResponse {
       shortName: "UF vs FAU",
       startTime: "2026-09-05T23:45:00.000Z",
       round: "Season Opener",
-      status: "Scheduled",
-      state: "pre",
-      venue: "Ben Hill Griffin Stadium",
+      venue: "Steve Spurrier-Florida Field at Ben Hill Griffin Stadium",
       location: "Gainesville, Florida",
-      broadcasts: [],
+      broadcasts: ["SEC Network"],
       home: makeSide("Florida", "UF", -320, "home"),
       away: makeSide("Florida Atlantic", "FAU", 240, "away"),
       source: "Florida Athletics schedule / demo line",
@@ -167,8 +210,6 @@ export function cfbOpenersSlate(now = new Date()): SlateResponse {
       shortName: "LSU vs CLEM",
       startTime: "2026-09-05T23:30:00.000Z",
       round: "Season Opener",
-      status: "Scheduled",
-      state: "pre",
       venue: "Tiger Stadium",
       location: "Baton Rouge, Louisiana",
       broadcasts: ["ABC"],
@@ -177,10 +218,11 @@ export function cfbOpenersSlate(now = new Date()): SlateResponse {
       source: "LSU Athletics schedule / demo line",
     },
   ];
+  const games = materializeSchedule(scheduledGames, now, 270);
 
   return {
     games,
-    activeGameId: games[0].id,
+    activeGameId: activeGameId(games),
     eligibleCountryCodes: CFB_TEAM_CODES,
     source: "Official 2026 team schedules / demo lines",
     sourceStatus: "fallback",
@@ -191,20 +233,18 @@ export function cfbOpenersSlate(now = new Date()): SlateResponse {
 }
 
 export function fallbackSlate(now = new Date()): SlateResponse {
-  const games: LiveGame[] = [
+  const scheduledGames: ScheduledGame[] = [
     {
       id: "france-morocco-2026-07-09",
       matchup: "France vs Morocco",
       shortName: "FRA vs MAR",
       startTime: "2026-07-09T20:00:00.000Z",
       round: "Quarterfinals",
-      status: "Scheduled",
-      state: "pre",
       venue: "Boston Stadium",
       location: "Foxborough, Massachusetts",
-      broadcasts: ["FOX"],
-      home: makeSide("France", "FRA", -170, "home", "0"),
-      away: makeSide("Morocco", "MAR", 500, "away", "0"),
+      broadcasts: ["FOX", "FOX One"],
+      home: makeSide("France", "FRA", -170, "home"),
+      away: makeSide("Morocco", "MAR", 500, "away"),
       drawOdds: "+280",
       source: "FIFA schedule / demo line",
     },
@@ -214,13 +254,11 @@ export function fallbackSlate(now = new Date()): SlateResponse {
       shortName: "ESP vs BEL",
       startTime: "2026-07-10T22:00:00.000Z",
       round: "Quarterfinals",
-      status: "Scheduled",
-      state: "pre",
       venue: "Los Angeles Stadium",
       location: "Inglewood, California",
-      broadcasts: ["FOX"],
-      home: makeSide("Spain", "ESP", -155, "home", "0"),
-      away: makeSide("Belgium", "BEL", 425, "away", "0"),
+      broadcasts: ["FOX", "FOX One"],
+      home: makeSide("Spain", "ESP", -155, "home"),
+      away: makeSide("Belgium", "BEL", 425, "away"),
       drawOdds: "+300",
       source: "FIFA schedule / demo line",
     },
@@ -230,13 +268,11 @@ export function fallbackSlate(now = new Date()): SlateResponse {
       shortName: "NOR vs ENG",
       startTime: "2026-07-11T21:00:00.000Z",
       round: "Quarterfinals",
-      status: "Scheduled",
-      state: "pre",
       venue: "Miami Stadium",
       location: "Miami Gardens, Florida",
-      broadcasts: ["FOX"],
-      home: makeSide("Norway", "NOR", 145, "home", "0"),
-      away: makeSide("England", "ENG", 175, "away", "0"),
+      broadcasts: ["FOX", "FOX One"],
+      home: makeSide("Norway", "NOR", 145, "home"),
+      away: makeSide("England", "ENG", 175, "away"),
       drawOdds: "+225",
       source: "FIFA schedule / demo line",
     },
@@ -246,21 +282,20 @@ export function fallbackSlate(now = new Date()): SlateResponse {
       shortName: "ARG vs SUI",
       startTime: "2026-07-12T02:00:00.000Z",
       round: "Quarterfinals",
-      status: "Scheduled",
-      state: "pre",
       venue: "Kansas City Stadium",
       location: "Kansas City, Missouri",
-      broadcasts: ["FOX"],
-      home: makeSide("Argentina", "ARG", -190, "home", "0"),
-      away: makeSide("Switzerland", "SUI", 525, "away", "0"),
+      broadcasts: ["FOX", "FOX One"],
+      home: makeSide("Argentina", "ARG", -190, "home"),
+      away: makeSide("Switzerland", "SUI", 525, "away"),
       drawOdds: "+310",
       source: "FIFA schedule / demo line",
     },
   ];
+  const games = materializeSchedule(scheduledGames, now, 210);
 
   return {
     games,
-    activeGameId: games[0].id,
+    activeGameId: activeGameId(games),
     eligibleCountryCodes: FALLBACK_ELIGIBLE_COUNTRY_CODES,
     source: "FIFA quarterfinal schedule / demo lines",
     sourceStatus: "fallback",

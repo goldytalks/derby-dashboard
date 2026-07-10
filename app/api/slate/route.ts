@@ -185,6 +185,35 @@ function eligibleCountryCodes(games: LiveGame[]): string[] {
   return Array.from(new Set(codes.filter((code) => Boolean(getCountry(code)))));
 }
 
+function withVerifiedDemoLine(game: LiveGame, demos: LiveGame[]): LiveGame {
+  const gameCodes = [game.home.countryCode, game.away.countryCode].sort().join(":");
+  const demo = demos.find(
+    (entry) => [entry.home.countryCode, entry.away.countryCode].sort().join(":") === gameCodes
+  );
+  if (!demo) return game;
+  const lineFor = (code: string) =>
+    [demo.home, demo.away].find((side) => side.countryCode === code);
+  const mergeSide = (side: LiveGame["home"]): LiveGame["home"] => {
+    const line = lineFor(side.countryCode);
+    return line
+      ? {
+          ...side,
+          odds: line.odds,
+          impliedProbability: line.impliedProbability,
+          stake: line.stake,
+          toWin: line.toWin,
+        }
+      : side;
+  };
+  return {
+    ...game,
+    home: mergeSide(game.home),
+    away: mergeSide(game.away),
+    drawOdds: demo.drawOdds,
+    source: `${game.source} / demo line`,
+  };
+}
+
 export async function GET(request: Request) {
   const now = new Date();
   if (new URL(request.url).searchParams.get("mode") === "cfb") {
@@ -196,9 +225,11 @@ export async function GET(request: Request) {
     const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const end = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const payload = await fetchScoreboard(`${dateKey(start)}-${dateKey(end)}`);
+    const demoGames = fallbackSlate(now).games;
     const games = (payload.events || [])
       .map(parseGame)
-      .filter((game): game is LiveGame => Boolean(game));
+      .filter((game): game is LiveGame => Boolean(game))
+      .map((game) => withVerifiedDemoLine(game, demoGames));
 
     if (!games.length) throw new Error("scoreboard_empty");
     const playableGames = games.filter(hasKnownTeams);

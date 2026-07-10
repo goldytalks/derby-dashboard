@@ -16,20 +16,40 @@ export const COUNTRIES: CountryTheme[] = [
     costume: "an unmistakable classical Trojan football champion look in deep cardinal and antique gold: a sculpted bronze cuirass, layered leather shoulder guards, a flowing cardinal cape, and a crestless bronze Trojan helmet tucked under one arm so the real face remains fully visible; cinematic Coliseum tunnel light, no weapons, logos, or readable text",
   },
   {
+    code: "SJSU", name: "San José State", flag: "🛡️", bg: "#0055A2", ink: "#FFFFFF", accent: "#E5A823", seed: "SPARTAN-26",
+    costume: "an unmistakable Spartan champion look in cobalt blue and warm gold: a sculpted bronze cuirass over a tailored blue football jacket, a sweeping cobalt cape, and a crestless bronze Spartan helmet tucked under one arm so the real face remains fully visible; refined arena light, no weapons, logos, or readable text",
+  },
+  {
     code: "ALA", name: "Alabama", flag: "🌊", bg: "#9E1B32", ink: "#FFFFFF", accent: "#FFFFFF", seed: "TIDE-26",
     costume: "a premium human rolling-crimson-tide mascot look: the person emerging from a sculptural curling wave costume made of glossy crimson fabric and translucent white foam, face fully visible and arms free, with restrained stadium lighting; whimsical, editorial, and unmistakably tide-inspired, with no logos or readable text",
+  },
+  {
+    code: "ECAR", name: "East Carolina", flag: "🏴‍☠️", bg: "#592A8A", ink: "#FFFFFF", accent: "#FDC82F", seed: "PIRATE-26",
+    costume: "a theatrical East Carolina pirate-captain champion look in rich purple and polished gold: a tailored naval coat with sweeping lapels, braided rope details, a brass compass prop, and a broad tricorn hat tucked under one arm so the real face remains fully visible; adventurous stadium portrait lighting, no weapons, logos, or readable text",
   },
   {
     code: "UGA", name: "Georgia", flag: "🐶", bg: "#BA0C2F", ink: "#FFFFFF", accent: "#000000", seed: "BULLDOG-26",
     costume: "a premium human bulldog mascot look in red, black, and white: an oversized sculptural bulldog body suit with the person's real face visible through a generous opening, broad padded shoulders, floppy ears above the head opening, and arms free; powerful rather than cartoonish, with no logos or readable text",
   },
   {
+    code: "TSU", name: "Tennessee State", flag: "🐯", bg: "#00539F", ink: "#FFFFFF", accent: "#B8C9E8", seed: "BLUE-TIGER-26",
+    costume: "a premium human blue-tiger mascot look in royal blue and white: a sculptural striped tiger body suit with the person's real face fully visible through a generous soft-fur mane opening, white chest details, and arms free; proud, celebratory, and editorial rather than cartoonish, with no logos or readable text",
+  },
+  {
     code: "UF", name: "Florida", flag: "🐊", bg: "#0021A5", ink: "#FFFFFF", accent: "#FA4616", seed: "GATOR-26",
     costume: "a premium human alligator mascot look in deep blue and vivid orange: a textured sculptural gator body suit with the person's real face visible inside an open friendly gator-mouth frame, arms free, athletic stadium pose, and refined natural scale texture; playful rather than frightening, with no logos or readable text",
   },
   {
+    code: "FAU", name: "Florida Atlantic", flag: "🦉", bg: "#003366", ink: "#FFFFFF", accent: "#CC0000", seed: "OWL-26",
+    costume: "a striking human owl-champion look in midnight blue, red, and white: a sculptural feathered cape with broad owl-wing shoulders, a softly tailored owl hood framing the person's real face without covering it, and subtle silver night-stadium highlights; wise, athletic, and premium rather than cartoonish, with no logos or readable text",
+  },
+  {
     code: "LSU", name: "LSU", flag: "🐯", bg: "#461D7C", ink: "#FFFFFF", accent: "#FDD023", seed: "TIGER-26",
     costume: "a premium human tiger mascot look in purple and gold: a sculptural tiger body suit with realistic striped faux-fur texture, the person's real face fully visible through a broad mane opening, arms free, and dramatic Saturday-night stadium light; fierce but celebratory, with no logos or readable text",
+  },
+  {
+    code: "CLEM", name: "Clemson", flag: "🐅", bg: "#F56600", ink: "#FFFFFF", accent: "#522D80", seed: "ORANGE-TIGER-26",
+    costume: "a premium human orange-tiger mascot look with regalia-purple accents: a sculptural orange-and-black striped tiger body suit, the person's real face fully visible through a broad white-cheeked mane opening, arms free, and bright hilltop stadium light; energetic, polished, and clearly distinct from the purple-and-gold tiger treatment, with no logos or readable text",
   },
   {
     code: "ALG", name: "Algeria", flag: "🇩🇿", bg: "#0B6B3A", ink: "#FFFFFF", accent: "#E63546", seed: "DESERT-FOX",
