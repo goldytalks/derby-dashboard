@@ -12,7 +12,7 @@ import { logEvent } from "@/lib/analytics";
 import { renderCard, type Slip } from "@/lib/composite";
 import { DEFAULT_CODE } from "@/lib/copy";
 import { confettiBurst } from "@/lib/confetti";
-import { createGuaranteedPortrait } from "@/lib/instant-portrait";
+import { createAIPortrait, preloadAIPortrait } from "@/lib/instant-portrait";
 import { COUNTRIES, getCountry, type CountryTheme } from "@/lib/prompts";
 import {
   cfbOpenersSlate,
@@ -57,8 +57,8 @@ const TEAM_GLYPHS: Record<string, string> = {
 };
 
 const PROCESSING_LINES = [
-  "Fitting the colors.",
-  "Painting the portrait.",
+  "Building your AI character.",
+  "Blending your likeness.",
   "Framing the final slip.",
 ];
 
@@ -115,22 +115,54 @@ function fixturePortrait(): string {
   background.addColorStop(1, "#746153");
   context.fillStyle = background;
   context.fillRect(0, 0, 1080, 1080);
-  context.fillStyle = "#202026";
+  context.fillStyle = "#171923";
   context.beginPath();
-  context.ellipse(540, 400, 205, 235, 0, 0, Math.PI * 2);
+  context.roundRect(210, 660, 660, 500, 210);
   context.fill();
-  context.fillStyle = "#c98e68";
+  context.fillStyle = "#a96d50";
+  context.fillRect(470, 590, 140, 150);
+  const skin = context.createRadialGradient(505, 375, 40, 540, 430, 250);
+  skin.addColorStop(0, "#e2ad86");
+  skin.addColorStop(1, "#b97556");
+  context.fillStyle = skin;
   context.beginPath();
-  context.ellipse(540, 430, 175, 215, 0, 0, Math.PI * 2);
+  context.ellipse(540, 425, 182, 230, -0.03, 0, Math.PI * 2);
   context.fill();
-  context.fillStyle = "#202026";
+  context.fillStyle = "#211d20";
   context.beginPath();
-  context.ellipse(540, 302, 180, 115, -0.08, Math.PI, Math.PI * 2);
+  context.ellipse(540, 285, 192, 128, -0.08, Math.PI, Math.PI * 2);
   context.fill();
-  context.fillStyle = "#f5f1e9";
   context.beginPath();
-  context.roundRect(245, 650, 590, 530, 180);
+  context.moveTo(357, 350);
+  context.quadraticCurveTo(390, 205, 555, 210);
+  context.quadraticCurveTo(720, 225, 724, 385);
+  context.quadraticCurveTo(660, 315, 585, 305);
+  context.quadraticCurveTo(470, 345, 357, 350);
   context.fill();
+  context.strokeStyle = "#37262a";
+  context.lineWidth = 18;
+  context.lineCap = "round";
+  context.beginPath();
+  context.moveTo(410, 394); context.quadraticCurveTo(458, 365, 500, 391);
+  context.moveTo(580, 391); context.quadraticCurveTo(626, 364, 672, 396);
+  context.stroke();
+  context.fillStyle = "#f3efe8";
+  context.beginPath(); context.ellipse(455, 425, 43, 23, 0, 0, Math.PI * 2); context.fill();
+  context.beginPath(); context.ellipse(625, 425, 43, 23, 0, 0, Math.PI * 2); context.fill();
+  context.fillStyle = "#3c6f78";
+  context.beginPath(); context.arc(459, 426, 15, 0, Math.PI * 2); context.fill();
+  context.beginPath(); context.arc(621, 426, 15, 0, Math.PI * 2); context.fill();
+  context.fillStyle = "#15151a";
+  context.beginPath(); context.arc(459, 426, 7, 0, Math.PI * 2); context.fill();
+  context.beginPath(); context.arc(621, 426, 7, 0, Math.PI * 2); context.fill();
+  context.strokeStyle = "rgba(104,57,44,.58)";
+  context.lineWidth = 10;
+  context.beginPath();
+  context.moveTo(545, 430); context.quadraticCurveTo(525, 515, 565, 525);
+  context.stroke();
+  context.strokeStyle = "#7e3f45";
+  context.lineWidth = 12;
+  context.beginPath(); context.moveTo(470, 570); context.quadraticCurveTo(540, 610, 616, 564); context.stroke();
   return canvas.toDataURL("image/jpeg", 0.92);
 }
 
@@ -148,7 +180,7 @@ function prefersReducedMotion(): boolean {
 }
 
 function templatePath(code: string): string {
-  return `/templates/hosted/${code.toLowerCase()}.webp`;
+  return `/templates/ai/${code.toLowerCase()}.webp`;
 }
 
 export default function BoothPage() {
@@ -232,8 +264,7 @@ export default function BoothPage() {
     setProcessingError(null);
     setScreen("capture");
     celebratedRef.current = false;
-    const template = new Image();
-    template.src = templatePath(nextSide.countryCode);
+    void preloadAIPortrait(nextSide.countryCode);
     logEvent("side_pick", { game: nextGame.id, side: nextSide.countryCode });
   }, []);
 
@@ -250,7 +281,7 @@ export default function BoothPage() {
         throw new Error("Move back slightly so your face and shoulders fit in frame.");
       }
       const selectedCountry = getCountry(selection.side.countryCode) || COUNTRIES[0];
-      const portraitSource = await createGuaranteedPortrait(image, selectedCountry);
+      const portraitSource = await createAIPortrait(image, selectedCountry);
       const elapsed = performance.now() - startedAt;
       if (elapsed < 900) {
         await new Promise((resolve) => window.setTimeout(resolve, 900 - elapsed));
@@ -258,7 +289,7 @@ export default function BoothPage() {
       portraitRef.current = await loadImage(portraitSource);
       setRenderVersion((version) => version + 1);
       setScreen("result");
-      logEvent("hosted_portrait_ready", {
+      logEvent("ai_portrait_ready", {
         country: selection.side.countryCode,
         durationMs: Math.round(performance.now() - startedAt),
       });
@@ -463,7 +494,7 @@ function PickScreen({
       <div className="pick-hero">
         <span className="eyebrow">THE 2026 PORTRAIT BOOTH</span>
         <h1>Pick a side.<br /><em>Become the moment.</em></h1>
-        <p>One photo becomes a framed, team-styled Gallery Slip in seconds.</p>
+        <p>One photo becomes a funny, AI-created team character in seconds.</p>
       </div>
 
       <div className="league-switch" role="tablist" aria-label="Choose a league">
@@ -666,7 +697,7 @@ function CaptureScreen({
       <div className="capture-copy">
         <span className="eyebrow">{country.flag} {matchup}</span>
         <h1>Say cheese.</h1>
-        <p>Center your face. We’ll handle the masterpiece.</p>
+        <p>Center your face. We’ll build the AI character.</p>
       </div>
       <div className="camera-stage" style={{ "--team": country.bg, "--team-accent": country.accent } as CSSProperties}>
         {!denied ? (
@@ -766,7 +797,6 @@ function ResultScreen({
   return (
     <section className="result-view">
       <div className="result-heading">
-        <span className="eyebrow">FRAMED & FINISHED</span>
         <h1>Your masterpiece, sir.</h1>
       </div>
       <div className="result-layout">
@@ -782,7 +812,7 @@ function ResultScreen({
         <aside className="result-panel">
           <span className="result-number">01</span>
           <h2>Ready for the group chat.</h2>
-          <p>Your square still is ready now. Add a short animated finish if you want the bonus cut.</p>
+          <p>Your AI character is framed in the square slip. Add a short animated finish if you want the bonus cut.</p>
           <div className="result-actions">
             <button type="button" className="primary-action" onClick={onSave}>Save slip</button>
             <button type="button" className="secondary-action" onClick={onShare}>Share</button>

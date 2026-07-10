@@ -2,7 +2,7 @@
 
 `novig: for the cup`
 
-Novig Booth turns one camera photo into a square, shareable Gallery Slip. The fan chooses a World Cup or college-football side, takes one photo, and receives a framed team portrait with the frozen matchup, odds, chance, $50 amount, and return.
+Novig Booth turns one camera photo into a square, shareable Gallery Slip. The fan chooses a World Cup or college-football side, takes one photo, and receives a funny AI-created character portrait with the frozen matchup, odds, chance, $50 amount, and return.
 
 ## Live app
 
@@ -13,22 +13,25 @@ The public flow is intentionally short:
 
 1. Pick a league, matchup, and side.
 2. Take one photo.
-3. Receive the finished square slip in about a second.
+3. Receive the finished AI portrait and square slip in seconds.
 4. Save or share the still, optionally create a 4.5-second motion cut, or start the next fan.
 
 There is no confirmation page, editable form, provider chooser, upload panel, QR code, or developer interface in the fan experience.
 
-## Hosted architecture
+## Hosted AI portrait architecture
 
-The production result does not depend on a local process or a browser-side provider key. Eighteen premium costume artworks are bundled with the application: eight World Cup quarterfinalists and both schools in every one of the five college-football openers. The camera frame is placed into the calibrated face opening for the selected team and rendered entirely in the browser.
+The production result does not depend on a local process, a provider key, or an unreliable third-party queue. Eighteen complete AI-generated character portraits are bundled with the application: eight World Cup quarterfinalists and both schools in every one of the five college-football openers. Every source portrait already has a complete face, body, costume, and scene.
 
-This gives the booth a deterministic result even if an external image service is slow or unavailable:
+At capture time, a bundled on-device face detector locates the fan's eyes, mouth, and face bounds without uploading the selfie. The compositor then blends only their identifying facial features into the full AI portrait and matches the generated scene's color and light. A face-shaped feather matte preserves the generated hair, jaw, costume, and background. There is no empty face opening, unchanged-photo fallback, or visible oval cutout.
+
+This gives the booth a deterministic, fully hosted result even if an external image service is slow or unavailable:
 
 ```mermaid
 flowchart LR
   Pick[Pick a side] --> Camera[Camera]
-  Camera --> Costume[Team costume compositor]
-  Costume --> Slip[Square Gallery Slip]
+  Camera --> Costume[Full AI character portrait]
+  Costume --> Identity[Seamless identity blend]
+  Identity --> Slip[Square Gallery Slip]
   Slip --> Still[Save or share PNG]
   Slip --> Motion[Optional 4.5 second motion cut]
   Slip --> Next[Next fan]
@@ -94,10 +97,12 @@ Useful URLs:
 - `app/globals.css` — responsive visual system and team animation
 - `lib/slate.ts` — schedule, odds, and matchup data
 - `lib/prompts.ts` — all country and school visual themes
-- `lib/instant-portrait.ts` — calibrated hosted costume compositor
+- `lib/face-blend.ts` — face-aware AI identity and lighting compositor
+- `lib/instant-portrait.ts` — compatibility facade for the full-AI renderer
 - `lib/composite.ts` — square Gallery Slip canvas renderer
 - `lib/motion.ts` — optional square WebM/MP4 export
-- `public/templates/hosted/` — eighteen optimized costume artworks
+- `public/templates/ai/` — eighteen complete AI-generated character portraits
+- `public/mediapipe/` — self-hosted face detector runtime and model
 
 ## Verification
 
@@ -107,7 +112,7 @@ npm run build
 npm audit --omit=dev
 ```
 
-`?fixture=1` covers the complete camera-to-still-to-motion path without a physical webcam. The production deployment is also tested directly after release.
+`?fixture=1` covers the complete camera-to-AI-portrait-to-still-to-motion path without a physical webcam. The production deployment is also tested directly after release.
 
 ## Approved brand copy
 
