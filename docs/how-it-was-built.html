@@ -29,7 +29,7 @@
     .shell { width: min(1040px, calc(100% - 40px)); margin: 0 auto; }
     header { padding: 38px 0 12px; display: flex; justify-content: space-between; gap: 20px; align-items: center; }
     .brand { display: flex; gap: 12px; align-items: center; font-weight: 800; letter-spacing: .12em; }
-    .mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--blue); font-size: 26px; }
+    .mark { width: 42px; height: 42px; object-fit: contain; }
     .back { padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; }
     .hero { padding: 88px 0 70px; border-bottom: 1px solid var(--line); }
     .eyebrow { color: var(--lime); font-size: 13px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
@@ -65,20 +65,20 @@
 <body>
   <div class="shell">
     <header>
-      <div class="brand"><span class="mark">N</span><span>NOVIG BOOTH</span></div>
+      <div class="brand"><img class="mark" src="./brand/novig-mark-blue.png" alt=""><span>NOVIG BOOTH</span></div>
       <a class="back" href="./">Open the booth</a>
     </header>
 
     <div class="hero">
       <div class="eyebrow">novig: for the cup</div>
-      <h1>One photo. Three finishes.</h1>
-      <p class="lede">A live World Cup photobooth that turns one portrait and one $50 team choice into three polished, downloadable match cards.</p>
+      <h1>Pick. Shoot. Masterpiece.</h1>
+      <p class="lede">A web-hosted World Cup and college-football booth that turns one camera portrait and one $50 team choice into a cohesive, square AI Gallery Slip.</p>
       <div class="pills">
         <span class="pill">Next.js 16</span>
-        <span class="pill">Codex built-in Image Gen</span>
-        <span class="pill">Gemini fallback</span>
+        <span class="pill">Vercel AI Gateway</span>
+        <span class="pill">Gemini image editing</span>
         <span class="pill">Live slate sync</span>
-        <span class="pill">48 tournament teams</span>
+        <span class="pill">18 active teams</span>
         <span class="pill">Pure canvas cards</span>
       </div>
     </div>
@@ -86,26 +86,26 @@
     <main>
       <section>
         <h2>The public experience</h2>
-        <p class="muted">The booth keeps the interface deliberately small. A guest takes or uploads one photo, chooses one of the two teams in the current match, and receives three finished cards. The trade amount stays fixed at $50.</p>
+        <p class="muted">The booth keeps the interface deliberately small. A guest picks a side, takes one photo, and receives one finished square slip. The trade amount stays fixed at $50.</p>
         <div class="grid">
-          <article class="card"><div class="number">01</div><h3>Capture</h3><p>Use the camera, upload a portrait, or load a synthetic test portrait in developer mode.</p></article>
-          <article class="card"><div class="number">02</div><h3>Choose</h3><p>Pick either team and see only current odds, profit to win, and implied chance.</p></article>
-          <article class="card"><div class="number">03</div><h3>Share</h3><p>Download or share the story, portrait, and square card treatments.</p></article>
+          <article class="card"><div class="number">01</div><h3>Pick</h3><p>Choose either side with its frozen odds, implied chance, and $50 return.</p></article>
+          <article class="card"><div class="number">02</div><h3>Capture</h3><p>Take one intentional camera photo after the hosted portrait studio passes preflight.</p></article>
+          <article class="card"><div class="number">03</div><h3>Share</h3><p>Save or share one square Renaissance-inspired Gallery Slip.</p></article>
         </div>
       </section>
 
       <section>
         <h2>Live slate and odds</h2>
         <p><code>app/api/slate/route.ts</code> asks ESPN's World Cup scoreboard for the current Eastern Time date and refreshes the browser every 60 seconds. The response is normalized into two team choices with American odds, implied probability, and profit on a $50 trade.</p>
-        <p class="muted">If the upstream source is unavailable, the route returns a clearly labeled, verified fallback so the booth remains testable. Developer mode exposes the source, location, draw price, every returned game, and all 48 tournament teams.</p>
+        <p class="muted">If the upstream source is unavailable, the route returns a clearly labeled verified schedule. The public booth never exposes developer controls.</p>
       </section>
 
       <section>
         <h2>AI portrait editing</h2>
-        <p><code>app/api/codex-image-job/route.ts</code> creates a workspace-only handoff for Codex's built-in Image Gen. It writes the normalized input and exact team prompt to <code>.codex/booth-image-job</code>, then the page polls for the generated result. No API key is required for this local test.</p>
-        <p>The prompt preserves the guest's face, skin tone, body proportions, hair, expression, and camera angle. It changes only wardrobe, prop, and background styling. France uses an exaggerated football-emperor costume with comic medals and a tiny crown, while explicitly excluding real insignia and authoritarian symbols.</p>
-        <div class="callout">The browser cannot invoke Codex tools directly. The local handoff keeps that boundary honest while still making the real generated portrait available to the final square export.</div>
-        <p class="muted" style="margin-top:18px"><code>app/api/generate/route.ts</code> keeps OpenAI and Gemini as optional production providers. They are not required for the local Codex workflow.</p>
+        <p><code>app/api/generate/route.ts</code> uses Vercel AI Gateway as the default hosted path. On Vercel, each Function request authenticates to the Gateway with a short-lived OIDC token, so the client receives no long-lived provider credential. An optional direct Gemini path is available only when the server is configured with <code>GEMINI_API_KEY</code>; that key remains server-only.</p>
+        <p>The server-owned prompt preserves the guest's identity while re-rendering the face, hair, neck, body, costume, background, light, and texture together. Every active country and school has a distinct treatment.</p>
+        <div class="callout">Pick-card art is preview-only. A finished slip can contain only a matching, newly generated square portrait—never a pasted face, pre-made body, or original-photo fallback.</div>
+        <p class="muted" style="margin-top:18px">The camera stays closed unless the exact deployed build, prompts, provider configuration, and image model have passed a sub-42-second release canary and the live Vercel billing probe succeeds.</p>
       </section>
 
       <section>
@@ -121,7 +121,7 @@
         <pre><code>npm install
 npm run dev
 # open http://localhost:3000/</code></pre>
-        <p class="muted">Pick a side, take one photo, and let the active Codex task process the queued image job. The page detects the matching result automatically and renders the finished Gallery Slip.</p>
+        <p class="muted">Fixture mode supplies a synthetic camera frame but still requires the real hosted image-edit route. It cannot fake a completed portrait.</p>
       </section>
 
       <section>
@@ -131,7 +131,7 @@ npm run dev
           <li>Confirm the live slate endpoint returns the current match and source status.</li>
           <li>Exercise the public path at desktop and mobile sizes.</li>
           <li>Render the native 1080 by 1080 canvas and confirm the framed portrait and live values remain legible.</li>
-          <li>Run a real built-in Image Gen edit and load the matching result into the Gallery Slip.</li>
+          <li>Run real hosted edits for France, Belgium, Spain, and USC and load each matching result into the Gallery Slip.</li>
           <li>Check the repository for prohibited copy before deployment.</li>
         </ol>
       </section>

@@ -543,7 +543,7 @@ a:focus-visible {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: url("/frames/grain.svg") center / 260px;
+  background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyODAiIGhlaWdodD0iMjgwIiB2aWV3Qm94PSIwIDAgMjgwIDI4MCI+CiAgPGZpbHRlciBpZD0ibiI+CiAgICA8ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iMC45IiBudW1PY3RhdmVzPSIyIiBzdGl0Y2hUaWxlcz0ic3RpdGNoIi8+CiAgICA8ZmVDb2xvck1hdHJpeCB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAxICAwIDAgMCAwIDEgIDAgMCAwIDAgMSAgMCAwIDAgMC4wMjUgMCIvPgogIDwvZmlsdGVyPgogIDxyZWN0IHdpZHRoPSIyODAiIGhlaWdodD0iMjgwIiBmaWx0ZXI9InVybCgjbikiLz4KPC9zdmc+Cg==") center / 260px;
   opacity: 0.16;
   mix-blend-mode: soft-light;
 }

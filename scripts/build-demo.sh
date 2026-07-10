@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build the static demo bundle into docs/ for CDN hosting (raw.githack).
 # The API route cannot be statically exported, so it is set aside during
-# the build; the browser falls back to mock mode on hosts with no API.
+# the build. The static reference remains honestly closed at provider
+# preflight; it never substitutes a preview or mock portrait.
 #
 # Usage: scripts/build-demo.sh [asset-prefix-url]
 
@@ -19,7 +20,11 @@ fi
 mv app/api .demo-api-hold
 trap 'mv .demo-api-hold app/api; rm -rf "$GUIDES_DIR"' EXIT
 
-NEXT_STATIC_DEMO=1 NEXT_PUBLIC_STATIC_DEMO=1 NEXT_DEMO_ASSET_PREFIX="$PREFIX" npx next build
+NEXT_STATIC_DEMO=1 \
+  NEXT_PUBLIC_STATIC_DEMO=1 \
+  NEXT_DEMO_ASSET_PREFIX="$PREFIX" \
+  NEXT_PUBLIC_STATIC_ASSET_PREFIX="$PREFIX" \
+  npx next build
 
 rm -rf docs
 cp -R out docs

@@ -1,6 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import {
+  ACTIVE_TEAM_CODES,
   buildCohesivePortraitPrompt,
   parseActiveTeamCode,
   type ActiveTeamCode,
@@ -17,8 +21,23 @@ const MAX_JSON_BYTES = 3 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const PREFLIGHTS_PER_WINDOW = 20;
 const GENERATIONS_PER_WINDOW = 6;
+const PERCEPTUAL_SAMPLE_SIZE = 32;
+const MIN_PERCEPTUAL_DIFFERENCE = 0.08;
+const MAX_DECODED_PIXELS = 4_096 * 4_096;
 const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ALLOWED_PAYLOAD_KEYS = new Set(["jobId", "selectionKey", "imageBase64", "teamCode"]);
+const CANARY_SECRET_HEADER = "x-booth-canary-secret";
+const CANARY_MODEL_HEADER = "x-booth-canary-model";
+const CANARY_VERIFICATION_SCHEMA = "novig-booth-image-canary-v2";
+const CANARY_VALIDITY_MS = 7 * 24 * 60 * 60 * 1_000;
+const CANARY_CLOCK_SKEW_MS = 5 * 60 * 1_000;
+const CANARY_INPUT_PATH = join(
+  process.cwd(),
+  "public",
+  "templates",
+  "ai",
+  "arg.webp"
+);
 const GEMINI_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
 const GATEWAY_MODEL = process.env.AI_GATEWAY_IMAGE_MODEL || "google/gemini-3.1-flash-image";
 const GATEWAY_PREFLIGHT_MODEL = process.env.AI_GATEWAY_PREFLIGHT_MODEL || "google/gemini-3.1-flash-lite";
@@ -43,8 +62,6 @@ interface ParsedImage {
 interface GeneratedPortrait {
   data: string;
   mime: string;
-  provider: Provider;
-  model: string;
 }
 
 interface Correlation {
@@ -54,8 +71,18 @@ interface Correlation {
 }
 
 interface ProviderConfiguration {
-  providers: Provider[];
+  provider?: Provider;
   gatewayToken?: string;
+}
+
+interface CanaryVerificationBinding {
+  artifactSha256: string;
+  configSha256: string;
+}
+
+interface CanaryVerificationMetadata extends CanaryVerificationBinding {
+  verifiedAt: number;
+  expiresAt: number;
 }
 
 interface RateBucket {
@@ -129,42 +156,193 @@ function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
 function gatewayTokenFor(request: Request): string | undefined {
   return asString(process.env.AI_GATEWAY_API_KEY, 16_384)
     || asString(request.headers.get("x-vercel-oidc-token"), 16_384)
     || asString(process.env.VERCEL_OIDC_TOKEN, 16_384);
 }
 
-function configuredProviders(request: Request): ProviderConfiguration {
-  const providers: Provider[] = [];
+function configuredProvider(request: Request): ProviderConfiguration {
   const gatewayToken = gatewayTokenFor(request);
-  if (gatewayToken) providers.push("gateway");
-  if (process.env.GEMINI_API_KEY) providers.push("gemini");
-
   const preferred = process.env.AI_IMAGE_PROVIDER;
-  if (preferred === "gateway" || preferred === "gemini") {
+
+  if (preferred === "gateway") {
+    return { provider: gatewayToken ? "gateway" : undefined, gatewayToken };
+  }
+  if (preferred === "gemini") {
     return {
-      providers: providers.includes(preferred)
-        ? [preferred, ...providers.filter((provider) => provider !== preferred)]
-        : providers,
+      provider: process.env.GEMINI_API_KEY ? "gemini" : undefined,
       gatewayToken,
     };
   }
-  return { providers, gatewayToken };
+
+  if (gatewayToken) return { provider: "gateway", gatewayToken };
+  if (process.env.GEMINI_API_KEY) return { provider: "gemini", gatewayToken };
+  return { gatewayToken };
 }
 
-function canaryIsVerified(providers: Provider[]): boolean {
+function modelForProvider(provider: Provider): string {
+  return provider === "gateway"
+    ? GATEWAY_MODEL
+    : GEMINI_MODEL.replace(/^google\//, "");
+}
+
+function deployedArtifactSha256(): string | undefined {
+  const gitCommit = asString(process.env.VERCEL_GIT_COMMIT_SHA, 200);
+  const releaseArtifact = asString(process.env.BOOTH_RELEASE_ARTIFACT_ID, 512);
+  if (!gitCommit && !releaseArtifact) return undefined;
+
+  return sha256Text(JSON.stringify({
+    schema: CANARY_VERIFICATION_SCHEMA,
+    gitCommit: gitCommit || null,
+    releaseArtifact: releaseArtifact || null,
+  }));
+}
+
+function promptSuiteSha256(): string {
+  return sha256Text(JSON.stringify(
+    ACTIVE_TEAM_CODES.map((teamCode) => [
+      teamCode,
+      buildCohesivePortraitPrompt(teamCode),
+    ])
+  ));
+}
+
+function verificationBinding(
+  provider: Provider,
+  canaryInput: ParsedImage
+): CanaryVerificationBinding | undefined {
+  const artifactSha256 = deployedArtifactSha256();
+  if (!artifactSha256) return undefined;
+
+  const generationConfig = provider === "gateway"
+    ? {
+        endpoint: GATEWAY_URL,
+        model: modelForProvider(provider),
+        modalities: ["text", "image"],
+        imageDetail: "high",
+        providerOrder: ["vertex", "google"],
+        disallowPromptTraining: true,
+        responseModalities: ["TEXT", "IMAGE"],
+        aspectRatio: "1:1",
+        imageSize: "1K",
+      }
+    : {
+        endpoint: GEMINI_INTERACTIONS_URL,
+        model: modelForProvider(provider),
+        store: false,
+        responseType: "image",
+        responseMime: "image/png",
+        aspectRatio: "1:1",
+        imageSize: "1K",
+      };
+
+  const configSha256 = sha256Text(JSON.stringify({
+    schema: CANARY_VERIFICATION_SCHEMA,
+    provider,
+    model: modelForProvider(provider),
+    promptSuiteSha256: promptSuiteSha256(),
+    canaryInputSha256: sha256(canaryInput.bytes),
+    generationConfig,
+    validation: {
+      generationTimeoutMs: GENERATION_TIMEOUT_MS,
+      maxInputBytes: MAX_INPUT_BYTES,
+      maxOutputBytes: MAX_OUTPUT_BYTES,
+      maxDecodedPixels: MAX_DECODED_PIXELS,
+      perceptualSampleSize: PERCEPTUAL_SAMPLE_SIZE,
+      minimumPerceptualDifference: MIN_PERCEPTUAL_DIFFERENCE,
+      perceptualCrop: "centre-cover",
+      perceptualKernel: "lanczos3",
+      perceptualColourspace: "srgb",
+    },
+  }));
+
+  return { artifactSha256, configSha256 };
+}
+
+function parseEpochMs(value: unknown): number | undefined {
+  if (typeof value !== "string" || !/^\d{13}$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+async function canaryIsVerified(provider: Provider | undefined): Promise<boolean> {
+  if (!provider) return false;
   const measuredMs = Number(process.env.AI_IMAGE_PROVIDER_CANARY_MS);
-  const verifiedModel = asString(process.env.AI_IMAGE_PROVIDER_VERIFIED_MODEL, 200);
-  const modelIsConfigured = (
-    (providers.includes("gateway") && verifiedModel === GATEWAY_MODEL)
-    || (providers.includes("gemini") && verifiedModel === GEMINI_MODEL.replace(/^google\//, ""))
-  );
+  const verifiedAt = parseEpochMs(process.env.AI_IMAGE_PROVIDER_VERIFIED_AT);
+  const expiresAt = parseEpochMs(process.env.AI_IMAGE_PROVIDER_VERIFIED_EXPIRES_AT);
+  if (!verifiedAt || !expiresAt) return false;
+
+  let binding: CanaryVerificationBinding | undefined;
+  try {
+    binding = verificationBinding(provider, await committedCanaryInput());
+  } catch {
+    return false;
+  }
+  if (!binding) return false;
+
+  const now = Date.now();
+  const validityMs = expiresAt - verifiedAt;
   return process.env.AI_IMAGE_PROVIDER_VERIFIED === "1"
     && Number.isFinite(measuredMs)
     && measuredMs > 0
-    && measuredMs <= GENERATION_TIMEOUT_MS
-    && modelIsConfigured;
+    && measuredMs < GENERATION_TIMEOUT_MS
+    && verifiedAt <= now + CANARY_CLOCK_SKEW_MS
+    && expiresAt > now
+    && validityMs > 0
+    && validityMs <= CANARY_VALIDITY_MS
+    && constantTimeTextEqual(
+      binding.artifactSha256,
+      process.env.AI_IMAGE_PROVIDER_VERIFIED_ARTIFACT_SHA256
+    )
+    && constantTimeTextEqual(
+      binding.configSha256,
+      process.env.AI_IMAGE_PROVIDER_VERIFIED_CONFIG_SHA256
+    );
+}
+
+function constantTimeTextEqual(
+  expected: string | null | undefined,
+  presented: string | null | undefined
+): boolean {
+  if (!expected || !presented || expected.length > 4_096 || presented.length > 4_096) {
+    return false;
+  }
+
+  const expectedDigest = createHash("sha256").update(expected, "utf8").digest();
+  const presentedDigest = createHash("sha256").update(presented, "utf8").digest();
+  return timingSafeEqual(expectedDigest, presentedDigest);
+}
+
+function hasValidCanarySecret(request: Request): boolean {
+  return constantTimeTextEqual(
+    process.env.BOOTH_CANARY_SECRET,
+    request.headers.get(CANARY_SECRET_HEADER)
+  );
+}
+
+async function committedCanaryInput(): Promise<ParsedImage> {
+  const bytes = await readFile(CANARY_INPUT_PATH);
+  const parsed = parseDataUrl(`data:image/webp;base64,${bytes.toString("base64")}`);
+  if (!parsed || parsed.bytes.byteLength > MAX_INPUT_BYTES) {
+    throw new GenerationError("canary_input_unavailable");
+  }
+  return parsed;
+}
+
+function issueCanaryVerification(
+  binding: CanaryVerificationBinding
+): CanaryVerificationMetadata {
+  const verifiedAt = Date.now();
+  return {
+    ...binding,
+    verifiedAt,
+    expiresAt: verifiedAt + CANARY_VALIDITY_MS,
+  };
 }
 
 function clientAddress(request: Request): string {
@@ -190,12 +368,59 @@ function withinRateLimit(request: Request, kind: "preflight" | "generation"): bo
   return bucket.generations <= GENERATIONS_PER_WINDOW;
 }
 
-function checkedOutput(
+async function sampledRgb(image: ParsedImage): Promise<Buffer> {
+  try {
+    const { data, info } = await sharp(image.bytes, {
+      failOn: "error",
+      limitInputPixels: MAX_DECODED_PIXELS,
+      sequentialRead: true,
+    })
+      .rotate()
+      .resize(PERCEPTUAL_SAMPLE_SIZE, PERCEPTUAL_SAMPLE_SIZE, {
+        fit: "cover",
+        position: "centre",
+        kernel: sharp.kernel.lanczos3,
+      })
+      .flatten({ background: { r: 0, g: 0, b: 0 } })
+      .toColourspace("srgb")
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    if (
+      info.width !== PERCEPTUAL_SAMPLE_SIZE
+      || info.height !== PERCEPTUAL_SAMPLE_SIZE
+      || info.channels !== 3
+      || data.byteLength !== PERCEPTUAL_SAMPLE_SIZE * PERCEPTUAL_SAMPLE_SIZE * 3
+    ) {
+      throw new GenerationError("invalid_output");
+    }
+    return data;
+  } catch (error) {
+    if (error instanceof GenerationError) throw error;
+    throw new GenerationError("invalid_output");
+  }
+}
+
+async function perceptualDifference(
+  first: ParsedImage,
+  second: ParsedImage
+): Promise<number> {
+  const [firstPixels, secondPixels] = await Promise.all([
+    sampledRgb(first),
+    sampledRgb(second),
+  ]);
+  let difference = 0;
+  for (let index = 0; index < firstPixels.length; index += 1) {
+    difference += Math.abs(firstPixels[index] - secondPixels[index]);
+  }
+  return difference / (PERCEPTUAL_SAMPLE_SIZE * PERCEPTUAL_SAMPLE_SIZE * 3 * 255);
+}
+
+async function checkedOutput(
   imageDataUrl: string,
-  input: ParsedImage,
-  provider: Provider,
-  model: string
-): GeneratedPortrait {
+  input: ParsedImage
+): Promise<GeneratedPortrait> {
   const output = parseDataUrl(imageDataUrl);
   if (!output) throw new GenerationError("invalid_output");
   if (output.bytes.byteLength > MAX_OUTPUT_BYTES) {
@@ -204,7 +429,10 @@ function checkedOutput(
   if (sha256(output.bytes) === sha256(input.bytes)) {
     throw new GenerationError("unchanged_image");
   }
-  return { data: output.data, mime: output.mime, provider, model };
+  if (await perceptualDifference(input, output) < MIN_PERCEPTUAL_DIFFERENCE) {
+    throw new GenerationError("unchanged_image");
+  }
+  return { data: output.data, mime: output.mime };
 }
 
 function dataUrlFromUnknown(value: unknown): string | undefined {
@@ -331,7 +559,7 @@ async function generateWithGemini(
 
   const imageDataUrl = extractGeminiInteractionImage(result);
   if (!imageDataUrl) throw new GenerationError("no_image");
-  return checkedOutput(imageDataUrl, image, "gemini", model);
+  return checkedOutput(imageDataUrl, image);
 }
 
 async function generateWithGateway(
@@ -390,40 +618,20 @@ async function generateWithGateway(
 
   const imageDataUrl = extractGatewayImage(result);
   if (!imageDataUrl) throw new GenerationError("no_image");
-  return checkedOutput(imageDataUrl, image, "gateway", GATEWAY_MODEL);
+  return checkedOutput(imageDataUrl, image);
 }
 
 async function generatePortrait(
   image: ParsedImage,
   prompt: string,
-  providers: Provider[],
+  provider: Provider,
   gatewayToken: string | undefined,
-  signal: AbortSignal,
-  correlation: Correlation
+  signal: AbortSignal
 ): Promise<GeneratedPortrait> {
-  let lastError: unknown;
-
-  for (const provider of providers) {
-    if (signal.aborted) throw lastError || new GenerationError("timeout");
-    try {
-      return provider === "gateway"
-        ? await generateWithGateway(image, prompt, gatewayToken, signal)
-        : await generateWithGemini(image, prompt, signal);
-    } catch (error) {
-      lastError = error;
-      const generationError = error instanceof GenerationError ? error : undefined;
-      console.error("Hosted portrait provider attempt failed", {
-        ...correlation,
-        provider,
-        code: generationError?.code || "upstream",
-        upstreamStatus: generationError?.upstreamStatus,
-      });
-
-      if (generationError?.code === "moderation_blocked") throw error;
-    }
-  }
-
-  throw lastError || new GenerationError("provider_unconfigured");
+  if (signal.aborted) throw new GenerationError("timeout");
+  return provider === "gateway"
+    ? generateWithGateway(image, prompt, gatewayToken, signal)
+    : generateWithGemini(image, prompt, signal);
 }
 
 function correlatedError(correlation: Partial<Correlation>, error: string, message: string) {
@@ -503,14 +711,12 @@ export async function GET(request: Request) {
     );
   }
 
-  const { providers, gatewayToken } = configuredProviders(request);
-  const configured = providers.length > 0;
-  const operatorVerified = canaryIsVerified(providers);
+  const { provider, gatewayToken } = configuredProvider(request);
+  const configured = Boolean(provider);
+  const operatorVerified = await canaryIsVerified(provider);
   const startedAt = Date.now();
-  const reachable = configured && operatorVerified
-    ? (await Promise.all(
-        providers.map((provider) => providerIsReachable(provider, gatewayToken))
-      )).some(Boolean)
+  const reachable = provider && operatorVerified
+    ? await providerIsReachable(provider, gatewayToken)
     : false;
   const ready = configured && operatorVerified && reachable;
 
@@ -540,6 +746,8 @@ export async function POST(request: Request) {
       429
     );
   }
+
+  const canaryAuthorized = hasValidCanarySecret(request);
 
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BYTES) {
@@ -616,24 +824,49 @@ export async function POST(request: Request) {
   }
 
   const correlation: Correlation = { jobId, selectionKey, teamCode };
-  if (typeof payload.imageBase64 !== "string") {
-    return responseJson(
-      correlatedError(correlation, "bad_request", "A photo is required."),
-      400
-    );
+  let image: ParsedImage;
+  if (canaryAuthorized) {
+    if (Object.prototype.hasOwnProperty.call(body, "imageBase64")) {
+      return responseJson(
+        correlatedError(
+          correlation,
+          "bad_request",
+          "Protected canaries use the server-owned test image."
+        ),
+        400
+      );
+    }
+    try {
+      image = await committedCanaryInput();
+    } catch {
+      console.error("Hosted portrait canary input unavailable", correlation);
+      return responseJson(
+        correlatedError(correlation, "unavailable", "Hosted portrait generation is unavailable."),
+        503
+      );
+    }
+  } else {
+    if (typeof payload.imageBase64 !== "string") {
+      return responseJson(
+        correlatedError(correlation, "bad_request", "A photo is required."),
+        400
+      );
+    }
+
+    const parsedImage = parseDataUrl(payload.imageBase64);
+    if (!parsedImage) {
+      return responseJson(
+        correlatedError(
+          correlation,
+          "bad_image",
+          "Photos must be valid JPEG, PNG, or WebP files."
+        ),
+        400
+      );
+    }
+    image = parsedImage;
   }
 
-  const image = parseDataUrl(payload.imageBase64);
-  if (!image) {
-    return responseJson(
-      correlatedError(
-        correlation,
-        "bad_image",
-        "Photos must be valid JPEG, PNG, or WebP files."
-      ),
-      400
-    );
-  }
   if (image.bytes.byteLength > MAX_INPUT_BYTES) {
     return responseJson(
       correlatedError(correlation, "too_large", "That photo is too large. Try a smaller one."),
@@ -641,8 +874,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const { providers, gatewayToken } = configuredProviders(request);
-  if (providers.length === 0) {
+  const { provider, gatewayToken } = configuredProvider(request);
+  if (!provider) {
     return responseJson(
       correlatedError(
         correlation,
@@ -652,7 +885,37 @@ export async function POST(request: Request) {
       503
     );
   }
-  if (!canaryIsVerified(providers)) {
+  let canaryBinding: CanaryVerificationBinding | undefined;
+  if (
+    canaryAuthorized
+    && !constantTimeTextEqual(
+      modelForProvider(provider),
+      request.headers.get(CANARY_MODEL_HEADER)
+    )
+  ) {
+    return responseJson(
+      correlatedError(
+        correlation,
+        "canary_mismatch",
+        "The protected canary configuration does not match this deployment."
+      ),
+      409
+    );
+  }
+  if (canaryAuthorized) {
+    canaryBinding = verificationBinding(provider, image);
+    if (!canaryBinding) {
+      return responseJson(
+        correlatedError(
+          correlation,
+          "canary_unbound",
+          "The protected canary is not bound to a release artifact."
+        ),
+        409
+      );
+    }
+  }
+  if (!canaryAuthorized && !(await canaryIsVerified(provider))) {
     return responseJson(
       correlatedError(
         correlation,
@@ -679,16 +942,18 @@ export async function POST(request: Request) {
     const generated = await generatePortrait(
       image,
       prompt,
-      providers,
+      provider,
       gatewayToken,
-      controller.signal,
-      correlation
+      controller.signal
     );
     const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= GENERATION_TIMEOUT_MS) {
+      timedOut = true;
+      controller.abort();
+      throw new GenerationError("timeout");
+    }
     console.info("Hosted portrait generation completed", {
       ...correlation,
-      provider: generated.provider,
-      model: generated.model,
       elapsedMs,
     });
 
@@ -697,6 +962,9 @@ export async function POST(request: Request) {
       status: "complete",
       imageBase64: `data:${generated.mime};base64,${generated.data}`,
       elapsedMs,
+      ...(canaryAuthorized && canaryBinding
+        ? { verification: issueCanaryVerification(canaryBinding) }
+        : {}),
     });
   } catch (error) {
     const aborted = controller.signal.aborted
@@ -708,7 +976,6 @@ export async function POST(request: Request) {
     console.error("Hosted portrait generation failed", {
       ...correlation,
       code: timedOut ? "timeout" : aborted ? "cancelled" : code || "upstream",
-      upstreamStatus,
     });
 
     if (timedOut) {

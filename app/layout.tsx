@@ -5,6 +5,7 @@ import {
   Cormorant_Garamond,
   Space_Grotesk,
 } from "next/font/google";
+import { publicAssetPath } from "@/lib/public-assets";
 import "./globals.css";
 
 const displayFont = Archivo_Black({
@@ -43,6 +44,9 @@ export const metadata: Metadata = {
   title: "Novig Booth | novig: for the cup",
   description:
     "One photo becomes a team-styled portrait inside a square, shareable Gallery Slip.",
+  icons: {
+    icon: publicAssetPath("/icon.png"),
+  },
 };
 
 export const viewport: Viewport = {

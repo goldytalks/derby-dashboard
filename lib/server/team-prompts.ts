@@ -126,9 +126,10 @@ export function buildCohesivePortraitPrompt(teamCode: ActiveTeamCode): string {
   return [
     "Create a new, fully cohesive square editorial portrait by editing the provided selfie.",
     "Preserve the exact person's identity and recognizability: facial geometry, eye color, skin tone, apparent age, hair, hairline, expression, gaze, and distinctive features.",
+    "Keep the person's facial proportions natural and photographic: do not caricature, beautify, age, de-age, enlarge the eyes, reshape the mouth, or replace the subject with a lookalike.",
     "Re-render the face, hair, neck, body, wardrobe, props, background, color grade, light, shadows, grain, and depth of field together as one unified photograph.",
     "Do not copy, paste, composite, or mask source-photo pixels into a separately generated body or scene.",
-    "The result must not look like a collage or face swap. No cutout face, oval mask, face window, mascot-mouth opening, face-framing hood, floating head, mismatched head, duplicated face, hard facial edge, mismatched skin texture, or mismatched lighting.",
+    "The result must not look like a collage or face swap. No cutout face, oval mask, face window, mascot-mouth opening, face-framing hood, floating head, mismatched head, duplicated face, hard facial edge, mismatched skin texture, mismatched scale, or mismatched lighting.",
     "Maintain continuous, believable head-to-neck-to-shoulder anatomy and one consistent camera perspective.",
     `Team treatment: ${TEAM_TREATMENTS[teamCode]}`,
     "Replace all visible original clothing with that team treatment and make the transformation unmistakable at thumbnail size; never return the source selfie unchanged.",

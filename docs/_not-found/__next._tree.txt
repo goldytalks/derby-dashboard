@@ -1,2 +1,2 @@
-:HL["https://raw.githack.com/goldytalks/derby-dashboard/refs/heads/codex/novig-booth-vercel-audit/docs/_next/static/chunks/1tfwp__rhan8s.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"LTTTeH_4ON-VJkMLCLTyK"}
+:HL["https://raw.githack.com/goldytalks/derby-dashboard/refs/heads/codex/novig-booth-vercel-audit/docs/_next/static/chunks/02ykm30gwtzyc.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"_Jv8EoChfJZmPEeDpwMQ0"}

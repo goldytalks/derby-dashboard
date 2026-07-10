@@ -102,10 +102,10 @@
 
       <section>
         <h2>AI portrait editing</h2>
-        <p><code>app/api/generate/route.ts</code> sends the normalized selfie through Vercel AI Gateway to a production image-edit model. Vercel supplies a short-lived OIDC identity to the Function, so no long-lived image key is placed in the browser or repository.</p>
+        <p><code>app/api/generate/route.ts</code> uses Vercel AI Gateway as the default hosted path. On Vercel, each Function request authenticates to the Gateway with a short-lived OIDC token, so the client receives no long-lived provider credential. An optional direct Gemini path is available only when the server is configured with <code>GEMINI_API_KEY</code>; that key remains server-only.</p>
         <p>The server-owned prompt preserves the guest's identity while re-rendering the face, hair, neck, body, costume, background, light, and texture together. Every active country and school has a distinct treatment.</p>
         <div class="callout">Pick-card art is preview-only. A finished slip can contain only a matching, newly generated square portrait—never a pasted face, pre-made body, or original-photo fallback.</div>
-        <p class="muted" style="margin-top:18px">The camera stays closed unless the exact image model has passed a sub-42-second release canary and the live Vercel billing probe succeeds.</p>
+        <p class="muted" style="margin-top:18px">The camera stays closed unless the exact deployed build, prompts, provider configuration, and image model have passed a sub-42-second release canary and the live Vercel billing probe succeeds.</p>
       </section>
 
       <section>

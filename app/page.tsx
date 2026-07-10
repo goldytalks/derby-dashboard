@@ -13,7 +13,10 @@ import { renderCard, type Slip } from "@/lib/composite";
 import { DEFAULT_CODE } from "@/lib/copy";
 import { confettiBurst } from "@/lib/confetti";
 import { COUNTRIES, getCountry, type CountryTheme } from "@/lib/prompts";
+import { publicAssetPath } from "@/lib/public-assets";
 import {
+  CFB_TEAM_CODES,
+  FALLBACK_ELIGIBLE_COUNTRY_CODES,
   cfbOpenersSlate,
   fallbackSlate,
   type LiveGame,
@@ -58,6 +61,17 @@ interface MotionAsset {
   extension: "mp4" | "webm";
 }
 
+interface PersistedResultMetadata {
+  schemaVersion: typeof RESULT_PERSISTENCE_SCHEMA_VERSION;
+  createdAt: number;
+  expiresAt: number;
+  mode: ExperienceMode;
+  jobId: string;
+  teamCode: string;
+  gameId: string;
+  selection: Selection;
+}
+
 const TEAM_PHRASES: Record<string, string> = {
   USC: "Fight On.",
   ALA: "Roll Tide.",
@@ -88,6 +102,287 @@ const PROCESSING_LINES = [
 const PREFLIGHT_TIMEOUT_MS = 6_000;
 const GENERATION_DEADLINE_MS = 45_000;
 const NORMALIZED_PHOTO_SIZE = 1024;
+const RESULT_PERSISTENCE_SCHEMA_VERSION = 1 as const;
+const RESULT_PERSISTENCE_TTL_MS = 30 * 60 * 1_000;
+const RESULT_PERSISTENCE_DEADLINE_MS = 2_000;
+const RESULT_METADATA_KEY = "novig.booth.validated-result.v1";
+const RESULT_CACHE_NAME = "novig-booth-validated-result-v1";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === "string";
+}
+
+function isRequestId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+function isLiveSide(value: unknown): value is LiveSide {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.side === "string" &&
+    typeof value.countryCode === "string" &&
+    typeof value.odds === "string" &&
+    typeof value.impliedProbability === "number" &&
+    Number.isFinite(value.impliedProbability) &&
+    typeof value.stake === "number" &&
+    Number.isFinite(value.stake) &&
+    typeof value.toWin === "number" &&
+    Number.isFinite(value.toWin) &&
+    (value.homeAway === "home" || value.homeAway === "away") &&
+    isOptionalString(value.score) &&
+    (value.winner === undefined || typeof value.winner === "boolean")
+  );
+}
+
+function isLiveGame(value: unknown): value is LiveGame {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.matchup === "string" &&
+    typeof value.shortName === "string" &&
+    typeof value.startTime === "string" &&
+    typeof value.round === "string" &&
+    typeof value.status === "string" &&
+    (value.state === "pre" || value.state === "in" || value.state === "post") &&
+    typeof value.venue === "string" &&
+    typeof value.location === "string" &&
+    Array.isArray(value.broadcasts) &&
+    value.broadcasts.every((broadcast) => typeof broadcast === "string") &&
+    isLiveSide(value.home) &&
+    isLiveSide(value.away) &&
+    isOptionalString(value.drawOdds) &&
+    typeof value.source === "string"
+  );
+}
+
+function liveSidesMatch(first: LiveSide, second: LiveSide): boolean {
+  return (
+    first.side === second.side &&
+    first.countryCode === second.countryCode &&
+    first.odds === second.odds &&
+    first.impliedProbability === second.impliedProbability &&
+    first.stake === second.stake &&
+    first.toWin === second.toWin &&
+    first.homeAway === second.homeAway &&
+    first.score === second.score &&
+    first.winner === second.winner
+  );
+}
+
+function modeSupportsTeam(mode: ExperienceMode, teamCode: string): boolean {
+  return mode === "cfb"
+    ? CFB_TEAM_CODES.includes(teamCode)
+    : FALLBACK_ELIGIBLE_COUNTRY_CODES.includes(teamCode);
+}
+
+function parsePersistedResultMetadata(
+  rawValue: string
+): PersistedResultMetadata | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(rawValue);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || !isRecord(value.selection)) return null;
+
+  const selection = value.selection;
+  if (
+    value.schemaVersion !== RESULT_PERSISTENCE_SCHEMA_VERSION ||
+    typeof value.createdAt !== "number" ||
+    !Number.isFinite(value.createdAt) ||
+    typeof value.expiresAt !== "number" ||
+    !Number.isFinite(value.expiresAt) ||
+    value.expiresAt !== value.createdAt + RESULT_PERSISTENCE_TTL_MS ||
+    (value.mode !== "world-cup" && value.mode !== "cfb") ||
+    !isRequestId(value.jobId) ||
+    typeof value.teamCode !== "string" ||
+    typeof value.gameId !== "string" ||
+    !isRequestId(selection.selectionKey) ||
+    !isLiveGame(selection.game) ||
+    !isLiveSide(selection.side)
+  ) {
+    return null;
+  }
+
+  const correlatedGameSide = selection.side.homeAway === "home"
+    ? selection.game.home
+    : selection.game.away;
+  if (
+    value.teamCode !== selection.side.countryCode ||
+    value.gameId !== selection.game.id ||
+    !liveSidesMatch(selection.side, correlatedGameSide) ||
+    !modeSupportsTeam(value.mode, value.teamCode)
+  ) {
+    return null;
+  }
+
+  return value as unknown as PersistedResultMetadata;
+}
+
+function persistedResultCacheUrl(metadata: PersistedResultMetadata): string {
+  const parts = [
+    metadata.mode,
+    metadata.teamCode,
+    metadata.gameId,
+    metadata.selection.selectionKey,
+    metadata.jobId,
+  ].map((part) => encodeURIComponent(part));
+  return new URL(
+    `/.__novig/validated-result/${RESULT_PERSISTENCE_SCHEMA_VERSION}/${parts.join("/")}`,
+    window.location.origin
+  ).href;
+}
+
+async function clearPersistedResultStorage(
+  expectedMetadata?: PersistedResultMetadata
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  let metadata = expectedMetadata || null;
+  try {
+    const rawValue = window.sessionStorage.getItem(RESULT_METADATA_KEY);
+    const currentMetadata = rawValue ? parsePersistedResultMetadata(rawValue) : null;
+    if (!expectedMetadata) metadata = currentMetadata;
+    if (
+      !expectedMetadata ||
+      (currentMetadata &&
+        persistedResultCacheUrl(currentMetadata) === persistedResultCacheUrl(expectedMetadata))
+    ) {
+      window.sessionStorage.removeItem(RESULT_METADATA_KEY);
+    }
+  } catch {
+    // Storage can be disabled; the live booth flow must continue without it.
+  }
+  if (!metadata || !("caches" in window)) return;
+  try {
+    const cache = await window.caches.open(RESULT_CACHE_NAME);
+    await cache.delete(persistedResultCacheUrl(metadata));
+  } catch {
+    // Per-result cache deletion is best-effort for restricted storage.
+  }
+}
+
+async function purgeExpiredPersistedResults(now = Date.now()): Promise<void> {
+  if (typeof window === "undefined") return;
+  let expiredCurrentMetadata: PersistedResultMetadata | null = null;
+  try {
+    const rawValue = window.sessionStorage.getItem(RESULT_METADATA_KEY);
+    const currentMetadata = rawValue ? parsePersistedResultMetadata(rawValue) : null;
+    if (currentMetadata && currentMetadata.expiresAt <= now) {
+      expiredCurrentMetadata = currentMetadata;
+      window.sessionStorage.removeItem(RESULT_METADATA_KEY);
+    }
+  } catch {
+    // A restricted session store does not prevent cache expiry cleanup.
+  }
+  if (!("caches" in window)) return;
+  try {
+    const cache = await window.caches.open(RESULT_CACHE_NAME);
+    if (expiredCurrentMetadata) {
+      await cache.delete(persistedResultCacheUrl(expiredCurrentMetadata));
+    }
+    const requests = await cache.keys();
+    await Promise.all(requests.map(async (request) => {
+      const response = await cache.match(request);
+      const expiresAtValue = response?.headers.get("x-novig-expires-at");
+      if (expiresAtValue === null || expiresAtValue === undefined) return;
+      const expiresAt = Number(expiresAtValue);
+      if (Number.isFinite(expiresAt) && expiresAt <= now) {
+        await cache.delete(request);
+      }
+    }));
+  } catch {
+    // Expiry cleanup is best-effort; valid in-memory results still render.
+  }
+}
+
+async function readPersistedResult(
+  expectedMode: ExperienceMode
+): Promise<{ metadata: PersistedResultMetadata; portrait: HTMLImageElement } | null> {
+  if (typeof window === "undefined") return null;
+
+  let rawValue: string | null = null;
+  try {
+    rawValue = window.sessionStorage.getItem(RESULT_METADATA_KEY);
+  } catch {
+    return null;
+  }
+  if (!rawValue) return null;
+
+  const metadata = parsePersistedResultMetadata(rawValue);
+  const now = Date.now();
+  if (!metadata) {
+    await clearPersistedResultStorage();
+    return null;
+  }
+  if (
+    metadata.createdAt > now + 60_000 ||
+    metadata.expiresAt <= now ||
+    metadata.mode !== expectedMode ||
+    !("caches" in window)
+  ) {
+    await clearPersistedResultStorage(metadata);
+    return null;
+  }
+
+  await purgeExpiredPersistedResults();
+  if (metadata.expiresAt <= Date.now()) {
+    await clearPersistedResultStorage(metadata);
+    return null;
+  }
+
+  try {
+    const cache = await window.caches.open(RESULT_CACHE_NAME);
+    const response = await cache.match(persistedResultCacheUrl(metadata));
+    if (
+      !response ||
+      response.headers.get("x-novig-schema") !== String(RESULT_PERSISTENCE_SCHEMA_VERSION) ||
+      response.headers.get("x-novig-mode") !== metadata.mode ||
+      response.headers.get("x-novig-team") !== metadata.teamCode ||
+      response.headers.get("x-novig-game") !== metadata.gameId ||
+      response.headers.get("x-novig-selection") !== metadata.selection.selectionKey ||
+      response.headers.get("x-novig-job") !== metadata.jobId ||
+      response.headers.get("x-novig-expires-at") !== String(metadata.expiresAt)
+    ) {
+      await clearPersistedResultStorage(metadata);
+      return null;
+    }
+
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/") || blob.size < 1_024) {
+      await clearPersistedResultStorage(metadata);
+      return null;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const portrait = await loadImage(objectUrl);
+      const ratio = portrait.naturalWidth / portrait.naturalHeight;
+      if (
+        portrait.naturalWidth < 512 ||
+        portrait.naturalHeight < 512 ||
+        ratio < 0.96 ||
+        ratio > 1.04 ||
+        metadata.expiresAt <= Date.now()
+      ) {
+        await clearPersistedResultStorage(metadata);
+        return null;
+      }
+      return { metadata, portrait };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  } catch {
+    await clearPersistedResultStorage(metadata);
+    return null;
+  }
+}
 
 function loadImage(source: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -295,7 +590,7 @@ function prefersReducedMotion(): boolean {
 }
 
 function previewPath(code: string): string {
-  return `/templates/ai/${code.toLowerCase()}.webp`;
+  return publicAssetPath(`/templates/ai/${code.toLowerCase()}.webp`);
 }
 
 export default function BoothPage() {
@@ -318,6 +613,7 @@ export default function BoothPage() {
   const celebratedRef = useRef(false);
   const preflightRef = useRef<PreflightRequest | null>(null);
   const activeGenerationRef = useRef<ActiveGeneration | null>(null);
+  const persistenceEpochRef = useRef(0);
 
   const side = selection?.side;
   const game = selection?.game;
@@ -327,9 +623,34 @@ export default function BoothPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const initialMode = params.get("cfb") === "1" ? "cfb" : "world-cup";
+    const restoreEpoch = ++persistenceEpochRef.current;
+    let cancelled = false;
     setFixtureMode(params.get("fixture") === "1");
     setMode(initialMode);
     setSlate(initialMode === "cfb" ? collegeSlate : worldCupSlate);
+
+    const restore = async () => {
+      const restored = await readPersistedResult(initialMode);
+      if (
+        cancelled ||
+        !restored ||
+        persistenceEpochRef.current !== restoreEpoch
+      ) {
+        return;
+      }
+      portraitRef.current = restored.portrait;
+      celebratedRef.current = true;
+      setSelection(restored.metadata.selection);
+      setCameraError(null);
+      setProcessingError(null);
+      setRenderVersion((version) => version + 1);
+      setScreen("result");
+    };
+    void restore();
+
+    return () => {
+      cancelled = true;
+    };
   }, [collegeSlate, worldCupSlate]);
 
   useEffect(() => {
@@ -375,8 +696,17 @@ export default function BoothPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void purgeExpiredPersistedResults();
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const switchMode = useCallback((next: ExperienceMode) => {
     if (next === mode || screen !== "pick") return;
+    persistenceEpochRef.current += 1;
+    void clearPersistedResultStorage();
     const params = new URLSearchParams(window.location.search);
     if (next === "cfb") params.set("cfb", "1");
     else params.delete("cfb");
@@ -392,6 +722,9 @@ export default function BoothPage() {
 
   const chooseSide = useCallback(async (nextGame: LiveGame, nextSide: LiveSide) => {
     if (preflightRef.current || activeGenerationRef.current || submittingRef.current) return;
+
+    persistenceEpochRef.current += 1;
+    void clearPersistedResultStorage();
 
     const frozen = freezeSelection(nextGame, nextSide);
     const controller = new AbortController();
@@ -441,6 +774,99 @@ export default function BoothPage() {
       }
     }
   }, []);
+
+  const persistValidatedResult = useCallback(async ({
+    imageBase64,
+    jobId,
+    persistenceEpoch,
+    validatedSelection,
+  }: {
+    imageBase64: string;
+    jobId: string;
+    persistenceEpoch: number;
+    validatedSelection: Selection;
+  }) => {
+    let cacheUrl: string | null = null;
+    let cache: Cache | null = null;
+
+    await purgeExpiredPersistedResults();
+    if (persistenceEpochRef.current !== persistenceEpoch) return "superseded" as const;
+    await clearPersistedResultStorage();
+    if (
+      persistenceEpochRef.current !== persistenceEpoch ||
+      !("caches" in window)
+    ) {
+      return persistenceEpochRef.current === persistenceEpoch
+        ? "unavailable" as const
+        : "superseded" as const;
+    }
+
+    try {
+      const imageResponse = await fetch(imageBase64);
+      const blob = await imageResponse.blob();
+      if (
+        persistenceEpochRef.current !== persistenceEpoch ||
+        !blob.type.startsWith("image/") ||
+        blob.size < 1_024
+      ) {
+        return persistenceEpochRef.current === persistenceEpoch
+          ? "unavailable" as const
+          : "superseded" as const;
+      }
+
+      const createdAt = Date.now();
+      const metadata: PersistedResultMetadata = {
+        schemaVersion: RESULT_PERSISTENCE_SCHEMA_VERSION,
+        createdAt,
+        expiresAt: createdAt + RESULT_PERSISTENCE_TTL_MS,
+        mode,
+        jobId,
+        teamCode: validatedSelection.side.countryCode,
+        gameId: validatedSelection.game.id,
+        selection: validatedSelection,
+      };
+      cacheUrl = persistedResultCacheUrl(metadata);
+      cache = await window.caches.open(RESULT_CACHE_NAME);
+      if (persistenceEpochRef.current !== persistenceEpoch) return "superseded" as const;
+
+      await cache.put(cacheUrl, new Response(blob, {
+        headers: {
+          "Content-Type": blob.type,
+          "Cache-Control": "private, max-age=1800",
+          "x-novig-schema": String(RESULT_PERSISTENCE_SCHEMA_VERSION),
+          "x-novig-mode": metadata.mode,
+          "x-novig-team": metadata.teamCode,
+          "x-novig-game": metadata.gameId,
+          "x-novig-selection": metadata.selection.selectionKey,
+          "x-novig-job": metadata.jobId,
+          "x-novig-expires-at": String(metadata.expiresAt),
+        },
+      }));
+      if (persistenceEpochRef.current !== persistenceEpoch) {
+        await cache.delete(cacheUrl);
+        return "superseded" as const;
+      }
+
+      try {
+        window.sessionStorage.setItem(RESULT_METADATA_KEY, JSON.stringify(metadata));
+      } catch {
+        await cache.delete(cacheUrl);
+        return "unavailable" as const;
+      }
+      return "persisted" as const;
+    } catch {
+      if (cache && cacheUrl) {
+        try {
+          await cache.delete(cacheUrl);
+        } catch {
+          // Persistence is optional; rendering the validated result is not.
+        }
+      }
+      return persistenceEpochRef.current === persistenceEpoch
+        ? "unavailable" as const
+        : "superseded" as const;
+    }
+  }, [mode]);
 
   const submitPhoto = useCallback(async (source: string) => {
     if (!selection || submittingRef.current) return;
@@ -527,6 +953,45 @@ export default function BoothPage() {
         return;
       }
       window.clearTimeout(latest.timeout);
+      const persistenceEpoch = ++persistenceEpochRef.current;
+      const persistenceAttempt = persistValidatedResult({
+        imageBase64: result.imageBase64,
+        jobId,
+        persistenceEpoch,
+        validatedSelection: selection,
+      });
+      const remainingFlowMs = Math.max(
+        0,
+        GENERATION_DEADLINE_MS - (performance.now() - startedAt)
+      );
+      const persistenceBudgetMs = Math.min(
+        RESULT_PERSISTENCE_DEADLINE_MS,
+        remainingFlowMs
+      );
+      let persistenceDeadline = 0;
+      let persistenceTimedOut = false;
+      const persistenceOutcome = await Promise.race([
+        persistenceAttempt,
+        new Promise<"unavailable">((resolve) => {
+          persistenceDeadline = window.setTimeout(() => {
+            persistenceTimedOut = true;
+            if (persistenceEpochRef.current === persistenceEpoch) {
+              persistenceEpochRef.current += 1;
+            }
+            resolve("unavailable");
+          }, persistenceBudgetMs);
+        }),
+      ]);
+      window.clearTimeout(persistenceDeadline);
+      const current = activeGenerationRef.current;
+      if (
+        (persistenceOutcome === "superseded" && !persistenceTimedOut) ||
+        !current ||
+        current.jobId !== jobId ||
+        current.selectionKey !== selection.selectionKey
+      ) {
+        return;
+      }
       activeGenerationRef.current = null;
       portraitRef.current = portrait;
       setRenderVersion((version) => version + 1);
@@ -562,7 +1027,7 @@ export default function BoothPage() {
       }
       submittingRef.current = false;
     }
-  }, [selection]);
+  }, [persistValidatedResult, selection]);
 
   useEffect(() => {
     if (screen !== "result" || !portraitRef.current || !slipCanvasRef.current || !slip || !game) {
@@ -650,6 +1115,8 @@ export default function BoothPage() {
   }, [country.code, motionAsset]);
 
   const startOver = useCallback(() => {
+    persistenceEpochRef.current += 1;
+    void clearPersistedResultStorage();
     const preflight = preflightRef.current;
     if (preflight) {
       window.clearTimeout(preflight.timeout);
@@ -738,10 +1205,10 @@ function SiteHeader({ mode, sourceStatus }: { mode: ExperienceMode; sourceStatus
     <header className="site-header">
       <div className="brand-lockup">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="brand-mark" src="/brand/novig-mark-blue.png" alt="" aria-hidden="true" />
+        <img className="brand-mark" src={publicAssetPath("/brand/novig-mark-blue.png")} alt="" aria-hidden="true" />
         <div className="brand-copy">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="brand-wordmark" src="/brand/novig-wordmark.svg" alt="Novig" />
+          <img className="brand-wordmark" src={publicAssetPath("/brand/novig-wordmark.svg")} alt="Novig" />
           <span>{mode === "cfb" ? "COLLEGE FOOTBALL" : "WORLD CUP EDITION"}</span>
         </div>
       </div>

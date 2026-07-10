@@ -25,10 +25,14 @@ The finished portrait is a real image-to-image generation. Team artwork under `p
 Before mounting the camera, the booth asks `GET /api/generate` for a live readiness check. Readiness requires all three of these conditions:
 
 - a configured Vercel AI Gateway or direct Gemini provider;
-- a successful release canary for the exact image model in under 42 seconds; and
+- a successful release canary for the exact deployed build, prompts, provider configuration, and image model in under 42 seconds; and
 - a live credential and billing probe.
 
 After capture, the browser normalizes one square photo and sends one correlated request containing a job ID, frozen selection key, and allowlisted team code. The server owns every prompt and asks the image model to re-render the face, hair, neck, body, costume, background, lighting, texture, and color grade as one unified photograph. It rejects unchanged, oversized, malformed, late, or mismatched output. There is no composited or original-photo fallback.
+
+Once a generated result passes validation, the browser makes a short, bounded persistence attempt before showing the finished slip: only the generated image is kept in same-origin Cache Storage for 30 minutes, while small metadata in tab-scoped session storage correlates the job, mode, team, game, and frozen selection. A successful write makes the same finished slip refresh-restorable. If browser storage is unavailable, slow, or a write fails, the validated portrait still appears, but that instance is not refresh-restorable. The raw camera capture is never persisted.
+
+Next Fan, a mode switch, or a new selection removes only the correlated cache entry referenced by that tab; it never clears the shared cache. Expired cache entries are explicitly purged while unrelated unexpired entries, including distinct results in other tabs, remain intact.
 
 ```mermaid
 flowchart LR
@@ -105,22 +109,37 @@ Useful URLs:
 - `lib/composite.ts` — square Gallery Slip canvas renderer
 - `lib/motion.ts` — optional square WebM/MP4 export
 - `public/templates/ai/` — eighteen pick-card previews only
+- `scripts/assert-cohesive-flow.mjs` — structural regression gate preventing any compositor/template result path
+- `scripts/run-image-canary.mjs` — protected synthetic-image release canary for a deployed provider
 
 ## Verification
 
 ```bash
 npm run lint
 npm run build
+npm run check:cohesive
 npm audit --omit=dev
 ```
 
 `?fixture=1` supplies a synthetic camera frame but still uses the real hosted generation route. It can never substitute a preview or fake a finished result. A production release also requires real-camera visual checks for France, Belgium, Spain, and USC.
 
-After a successful model canary, deployment automation records:
+After a successful canary, the runner prints server-only values for the exact release artifact. Deployment automation records all of them, and the proof expires after seven days:
 
 - `AI_IMAGE_PROVIDER_VERIFIED=1`
-- `AI_IMAGE_PROVIDER_VERIFIED_MODEL=<exact model id>`
 - `AI_IMAGE_PROVIDER_CANARY_MS=<measured elapsed time>`
+- `AI_IMAGE_PROVIDER_VERIFIED_ARTIFACT_SHA256=<opaque artifact digest>`
+- `AI_IMAGE_PROVIDER_VERIFIED_CONFIG_SHA256=<opaque provider, prompt, and validation digest>`
+- `AI_IMAGE_PROVIDER_VERIFIED_AT=<server-issued epoch milliseconds>`
+- `AI_IMAGE_PROVIDER_VERIFIED_EXPIRES_AT=<server-issued epoch milliseconds>`
+
+The canary itself uses a server-owned synthetic image and the exact production prompt, provider, timeout, decoded-pixel checks, and correlation contract. It binds automatically to `VERCEL_GIT_COMMIT_SHA`; non-Git deployments must provide a deliberate `BOOTH_RELEASE_ARTIFACT_ID`:
+
+```bash
+BOOTH_CANARY_SECRET=... node scripts/run-image-canary.mjs \
+  --url https://your-preview.vercel.app \
+  --team USC \
+  --model google/gemini-3.1-flash-image
+```
 
 ## Approved brand copy
 

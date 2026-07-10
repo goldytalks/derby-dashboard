@@ -7,17 +7,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "check:cohesive": "node scripts/assert-cohesive-flow.mjs"
   },
   "engines": {
     "node": ">=20.9.0"
   },
   "dependencies": {
     "next": "16.2.10",
-    "openai": "^6.46.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "sharp": "0.34.5"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

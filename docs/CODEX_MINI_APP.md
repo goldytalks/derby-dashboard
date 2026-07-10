@@ -1,224 +1,117 @@
-# Codex Mini-App operating guide
+# Codex development guide
 
-This document explains how the current Novig Booth runs locally without placing an external image API credential in the website.
+This file records how to run and verify the current Novig Booth in Codex. The public booth is now the same hosted-generation application locally and on Vercel; it no longer depends on a filesystem job watcher or a face-compositing contingency.
 
-## Purpose
+## Current architecture
 
-The Mini-App gives an event operator a complete photobooth prototype inside Codex:
+The active flow is deterministic:
 
-- a real browser camera,
-- an event slate,
-- team-specific styling,
-- built-in image editing,
-- a square Gallery Slip,
-- and a repeatable browser fixture.
+1. Pick a team.
+2. Pass the live hosted-provider preflight.
+3. Open the camera and take one photo.
+4. Send one correlated generation request.
+5. Accept only the matching cohesive AI portrait.
+6. Render that portrait inside the square Gallery Slip.
 
-The local architecture is intentionally agent-assisted. It is for creative testing, booth-flow validation, prompt development, and stakeholder demos. It is not the production hosted architecture and does not provide a provider latency SLA.
+`app/page.tsx` never substitutes a team preview, the original camera frame, or a local template for a generated result. Team previews under `public/templates/ai/` appear only on the pick screen.
 
-## Prerequisites
+## Run locally
 
-- macOS with Codex desktop
+Requirements:
+
 - Node.js 20.9+
 - npm
-- a browser with camera permission for real-photo tests
-- the Codex task kept active while built-in Image Gen jobs are running
-
-## Start the Mini-App
+- a browser with camera permission for real-photo checks
+- a configured hosted provider and valid release-canary proof
 
 ```bash
 npm install
-npm run dev
+cp .env.local.example .env.local
+npm run dev -- --hostname 127.0.0.1
 ```
 
-Open `http://127.0.0.1:3000/` in the Codex in-app browser.
+Open `http://127.0.0.1:3000/`. Use `?cfb=1` for College Football. Use `?fixture=1` only to replace the physical webcam frame with the committed synthetic test frame; fixture mode still calls the real hosted generator and cannot fake a finished portrait.
 
-The interface offers World Cup and CFB modes. A direct link can preselect CFB with `?cfb=1`. Add `fixture=1` to use a synthetic camera frame.
+## Hosted generation contract
 
-## Fan experience
+Before camera access, the page requests:
 
-1. The fan chooses a team.
-2. The app runs a local readiness check before requesting camera access.
-3. The fan taps the single shutter button.
-4. The browser validates dimensions, normalizes the image, and freezes the selected matchup values.
-5. The app creates one job and moves directly to processing.
-6. Codex completes that exact image job.
-7. The app renders the generated portrait inside one 1080 × 1080 Gallery Slip.
-8. The fan can save the slip or reset for the next person.
+```text
+GET /api/generate?teamCode=<allowlisted-team-code>
+```
 
-No confirmation or manual import action appears between capture and result.
+The response is ready only when:
 
-## Job contract
+- a server-side provider is configured;
+- the exact deployed artifact, prompt suite, model, provider configuration, and validation rules passed the protected canary in under 42 seconds;
+- that proof is still inside its seven-day validity window; and
+- the live credential and billing probe succeeds.
 
-`POST /api/codex-image-job` accepts:
+After capture, the page sends:
 
 ```json
 {
+  "jobId": "browser-generated-uuid",
+  "selectionKey": "frozen-selection-uuid",
   "imageBase64": "data:image/jpeg;base64,...",
-  "countryCode": "USC",
-  "matchup": "USC vs San José State"
+  "teamCode": "USC"
 }
 ```
 
-The route validates the image, creates a UUID, and returns metadata shaped like:
+The server owns the prompt. It validates the team, image, payload size, output MIME, output size, generation time, decoded pixels, and job correlation. A successful response must echo the same `jobId`, `selectionKey`, and `teamCode` with `status: complete` and one new square image.
 
-```json
-{
-  "id": "3fcd6f8a-...",
-  "status": "queued",
-  "countryCode": "USC",
-  "countryName": "USC",
-  "matchup": "USC vs San José State",
-  "inputPath": "/absolute/path/input-3fcd6f8a.jpg",
-  "promptPath": "/absolute/path/prompt-3fcd6f8a.txt",
-  "resultPath": "/absolute/path/result-3fcd6f8a.png",
-  "createdAt": "2026-07-10T...Z"
-}
+## Cohesive portrait requirement
+
+`lib/server/team-prompts.ts` defines all eighteen treatments. Every prompt requires the model to render the face, hair, neck, shoulders, costume, props, background, light, shadows, texture, grain, and camera perspective as one photograph. It explicitly rejects face swaps, face windows, floating heads, mismatched scale, and pasted source pixels.
+
+The server and browser both reject visually unchanged output. The final canvas receives only the validated generated image. The old face-landmark runtime, hosted body plates, and USC helmet plate are intentionally absent so they cannot re-enter the result path.
+
+## Release canary
+
+The protected canary uses a server-owned synthetic image and the same provider path, prompts, timeout, correlation, and decoded-pixel validation as a fan request.
+
+```bash
+BOOTH_CANARY_SECRET=... node scripts/run-image-canary.mjs \
+  --url https://your-preview.vercel.app \
+  --team USC \
+  --model google/gemini-3.1-flash-image
 ```
 
-Files are written under `.codex/booth-image-job/`:
-
-```text
-job.json                    latest-job compatibility pointer
-job-<id>.json               immutable metadata for one fan
-input-<id>.<ext>            normalized camera frame
-prompt-<id>.txt             exact team edit prompt
-result-<id>.png             generated output expected by the browser
-```
-
-`job.json` is only a convenience pointer. The browser always polls by its own job ID.
-
-## Codex image-processing loop
-
-For each new queued job:
-
-1. Read `job-<id>.json`.
-2. Inspect its `inputPath` so the exact fan photo is visible.
-3. Read its `promptPath`.
-4. Use Codex built-in Image Gen in edit mode with the input image attached.
-5. Preserve identity, face, hair, expression, gaze, and skin tone.
-6. Apply only the requested team wardrobe, props, and scene.
-7. Save the generated PNG to that job's `resultPath`.
-8. Verify the API returns the same ID and `status: complete`.
-9. Verify the framed slip uses the generated portrait.
-
-The application detects completion from the presence and revision of the exact result file. Replacing a result file with an improved edit updates that session without creating a new job.
-
-## Status API
-
-Poll one job:
-
-```text
-GET /api/codex-image-job?id=<jobId>
-```
-
-Possible responses:
-
-- `200 queued` — metadata exists, result does not.
-- `200 complete` — metadata and matching image exist; response includes `imageBase64`.
-- `409 stale` — that ID is not available.
-
-Use metadata-only polling when image bytes are unnecessary:
-
-```text
-GET /api/codex-image-job?id=<jobId>&meta=1
-```
-
-The complete response includes a `resultRevision` derived from modification time and size. This allows a better edit to replace an earlier result reliably.
+A successful run writes its generated image to a private temporary file and prints the server-only verification environment values for that exact release. Inspect the output visually before recording those values or promoting the deployment.
 
 ## Persistence and recovery
 
-The browser stores the active session under one versioned local-storage key. It includes:
+Only a validated generated portrait may be persisted. The browser makes a bounded storage attempt before displaying the result:
 
-- mode,
-- team code,
-- frozen slip values,
-- selected game,
-- job metadata,
-- and normalized captured image.
+- the generated image goes into same-origin Cache Storage;
+- small job, team, game, mode, and frozen-selection metadata goes into tab-scoped session storage;
+- entries expire after 30 minutes and are explicitly purged;
+- **Next fan**, a mode switch, or a new selection removes only that tab's correlated result.
 
-On refresh, the app restores the same session and resumes polling. Historical job files remain available. Only an explicit **Next fan** action clears the browser's active pointer.
+The raw camera capture is never persisted. If storage is unavailable or slow, the validated result still renders in memory but is not refresh-restorable.
 
-## Readiness check
+## Historical local bridge
 
-Before camera access, the app requests:
+`/api/codex-image-job` and `.codex/booth-image-job/` remain workspace history from the earlier agent-assisted prototype. The current public page does not call or poll that route. They must not be used as a result fallback or as evidence that the hosted provider is ready.
 
-```text
-GET /api/codex-image-job?preflight=1&countryCode=<code>
-```
-
-The local check confirms:
-
-- the team exists,
-- the app is not running in Vercel's hosted environment,
-- the local job directory is writable,
-- and the browser has Canvas support.
-
-This proves that the Mini-App can create and render a local job. It does not prove that an external provider or Codex generation will finish inside a production deadline.
-
-## Fast contingency portraits
-
-The app can prepare a themed local portrait plate while the full edit is queued. This exists to prevent an indefinite loader during prototype testing. It must never be an untouched camera frame.
-
-The USC plate uses a detailed open-face Trojan helmet, bronze armor, cardinal cape, and Coliseum background. The live face is composited inside the empty helmet opening. A later full generated portrait replaces it when available.
-
-This contingency is a prototype behavior, not the hosted quality strategy. Production should use the two-lane generation design in `HOSTED_RUNTIME_PLAN.md`.
-
-## Fixture mode
-
-`?fixture=1` creates a synthetic camera frame without exposing any test control in the UI.
-
-Use it to verify:
-
-- team selection,
-- preflight,
-- camera state,
-- single-submit protection,
-- processing animation,
-- result rendering,
-- save and reset actions,
-- and responsive layout.
-
-Fixture mode does not prove real camera permission, identity fidelity, provider availability, or provider latency.
-
-## Safety and privacy
-
-- Local job files are ignored by Git.
-- Do not commit captured fan photos or generated per-fan results.
-- Do not expose filesystem paths in the public interface.
-- Do not reuse one fan's image as another fan's result.
-- Do not send a photo to an external service unless the event's privacy notice covers that provider.
-- Keep all hosted credentials server-side.
-
-## Troubleshooting
-
-### Camera does not open
-
-- Confirm the site is on `localhost` or `127.0.0.1`.
-- Confirm browser camera permission.
-- Reload and tap **Try camera again**.
-- Use `?fixture=1` only to isolate the UI from hardware permission.
-
-### Processing does not finish
-
-- Inspect `.codex/booth-image-job/job.json` for the active ID.
-- Confirm the corresponding `job-<id>.json`, input, and prompt exist.
-- Confirm Codex wrote a non-empty PNG to that job's exact `resultPath`.
-- Request the metadata-only status URL and confirm `status: complete`.
-- Never substitute a different job's result.
-
-### A stale photo appears
-
-- Confirm the browser is polling with `?id=<activeJobId>`.
-- Confirm no script is overwriting `job.json` and then reading it as the active session.
-- Confirm the result filename contains the same UUID as the input and metadata.
-
-## Validation
+## Verification
 
 ```bash
 npm run lint
 npm run build
+npm run check:cohesive
+npm audit --omit=dev
 git diff --check
 ```
 
-Then run the full fixture path for at least one World Cup team and one CFB team. For a real-photo release check, run a fresh camera capture and verify the person's generated portrait appears inside the saved square PNG.
+Then run:
 
+- the complete `?fixture=1` path;
+- a real-camera France result;
+- a real-camera Belgium result;
+- a real-camera Spain result;
+- a real-camera USC result;
+- Save Slip and refresh restoration;
+- browser-console and Vercel runtime-log checks.
+
+Do not promote the release until all four portraits are visibly cohesive and each completes inside the booth deadline.

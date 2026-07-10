@@ -1,4 +1,5 @@
 import QRCode from "qrcode";
+import { publicAssetPath } from "@/lib/public-assets";
 import type { SlipStatus } from "@/lib/copy";
 import type { CountryTheme } from "@/lib/prompts";
 
@@ -99,9 +100,9 @@ function getBrandMarks(): Promise<{
 }> {
   if (!brandMarksPromise) {
     brandMarksPromise = Promise.all([
-      loadCanvasImage("/brand/novig-mark-blue.png"),
-      loadCanvasImage("/brand/novig-mark-white.png"),
-      loadCanvasImage("/brand/novig-wordmark.svg"),
+      loadCanvasImage(publicAssetPath("/brand/novig-mark-blue.png")),
+      loadCanvasImage(publicAssetPath("/brand/novig-mark-white.png")),
+      loadCanvasImage(publicAssetPath("/brand/novig-wordmark.svg")),
     ]).then(([blue, white, wordmark]) => ({ blue, white, wordmark }));
   }
   return brandMarksPromise;
