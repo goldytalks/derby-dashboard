@@ -1,424 +1,143 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Novig Booth: How It Was Built</title>
-<style>
-  :root {
-    --blue: #1ca3f5;
-    --ink: #0e0e12;
-    --ticket: #121216;
-    --paper: #f4f8fc;
-    --green: #35d07f;
-    --red: #e5364b;
-    --muted: rgba(244, 248, 252, 0.64);
-    --line: rgba(244, 248, 252, 0.14);
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--ink);
-    color: var(--paper);
-    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-    line-height: 1.6;
-  }
-  a { color: var(--blue); }
-  a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 28px 18px 80px; }
-  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
-  .brand .n {
-    width: 34px; height: 34px; border-radius: 9px; background: var(--blue);
-    color: #fff; font-weight: 900; font-size: 19px; display: grid; place-items: center;
-  }
-  .brand span { font-weight: 700; letter-spacing: 0.24em; font-size: 13px; color: var(--muted); }
-  h1 {
-    font-weight: 900; font-size: clamp(34px, 8vw, 58px); line-height: 1.02;
-    margin: 0 0 10px; text-transform: uppercase;
-  }
-  h1 em { font-style: normal; color: var(--blue); }
-  .sub { color: var(--muted); max-width: 62ch; margin: 0 0 24px; }
-  .hazard {
-    height: 12px; border-radius: 3px; margin: 26px 0;
-    background: repeating-linear-gradient(-45deg, rgba(244,248,252,0.2) 0 12px, transparent 12px 26px);
-  }
-  h2 {
-    font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em;
-    font-size: 22px; margin: 40px 0 12px; color: var(--paper);
-  }
-  h3 { font-size: 16px; margin: 22px 0 8px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
-  p, li { color: rgba(244, 248, 252, 0.86); }
-  .card {
-    background: linear-gradient(180deg, #16161c 0%, var(--ticket) 100%);
-    border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px;
-    margin: 14px 0; box-shadow: 0 12px 30px rgba(0,0,0,0.35);
-  }
-  code, pre {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 13px;
-  }
-  code { background: rgba(244,248,252,0.08); border-radius: 5px; padding: 1px 6px; }
-  pre {
-    background: #0a0a10; border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px; overflow-x: auto; line-height: 1.5; white-space: pre;
-  }
-  pre code { background: none; padding: 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.12em; }
-  td code { white-space: nowrap; }
-  .pill {
-    display: inline-block; border: 1px solid var(--line); border-radius: 999px;
-    padding: 3px 12px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--muted); margin: 0 6px 6px 0;
-  }
-  .ok { color: var(--green); }
-  .warn { color: #ffb84d; }
-  ol li, ul li { margin: 6px 0; }
-  .toc { columns: 2; column-gap: 24px; padding-left: 18px; margin: 0; }
-  @media (max-width: 560px) { .toc { columns: 1; } }
-  .copybar {
-    display: flex; justify-content: space-between; align-items: center; gap: 10px;
-    margin: 18px 0 6px;
-  }
-  .copybar button {
-    background: var(--blue); border: 0; color: #04121c; font-weight: 700;
-    border-radius: 10px; padding: 10px 16px; font-size: 14px; cursor: pointer;
-  }
-  footer { margin-top: 56px; text-align: center; color: var(--muted); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0e0e12">
+  <title>How Novig Booth was built</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f7f7f4;
+      --muted: #aaaab4;
+      --panel: #17171d;
+      --line: #30303a;
+      --blue: #1ca3f5;
+      --lime: #d8ff3e;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 82% 4%, rgba(28, 163, 245, .18), transparent 27rem),
+        #0e0e12;
+      color: var(--ink);
+      font: 16px/1.65 Arial, Helvetica, sans-serif;
+    }
+    a { color: var(--ink); text-underline-offset: 4px; }
+    .shell { width: min(1040px, calc(100% - 40px)); margin: 0 auto; }
+    header { padding: 38px 0 12px; display: flex; justify-content: space-between; gap: 20px; align-items: center; }
+    .brand { display: flex; gap: 12px; align-items: center; font-weight: 800; letter-spacing: .12em; }
+    .mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--blue); font-size: 26px; }
+    .back { padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; }
+    .hero { padding: 88px 0 70px; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: var(--lime); font-size: 13px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { max-width: 850px; margin: 18px 0 22px; font-size: clamp(50px, 9vw, 112px); line-height: .86; letter-spacing: -.07em; text-transform: uppercase; }
+    .lede { max-width: 720px; color: #d4d4d9; font-size: 21px; }
+    .pills { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 28px; }
+    .pill { border: 1px solid var(--line); background: rgba(23,23,29,.7); padding: 7px 11px; border-radius: 999px; color: #cfcfd5; font-size: 13px; }
+    main { padding: 36px 0 96px; }
+    section { padding: 48px 0; border-bottom: 1px solid var(--line); }
+    h2 { margin: 0 0 16px; font-size: clamp(30px, 5vw, 54px); line-height: 1; letter-spacing: -.045em; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 18px; }
+    .muted { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
+    .card { min-height: 210px; padding: 24px; border: 1px solid var(--line); border-radius: 24px; background: linear-gradient(145deg, rgba(28,163,245,.08), rgba(23,23,29,.82)); }
+    .number { color: var(--blue); font-weight: 800; font-size: 13px; letter-spacing: .16em; }
+    code { padding: 2px 6px; border-radius: 6px; background: #23232b; color: #fff; }
+    pre { overflow: auto; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: #101015; color: #e2e2e8; }
+    ul, ol { padding-left: 22px; }
+    li { margin: 9px 0; }
+    .callout { padding: 24px; border-radius: 22px; color: #0e0e12; background: var(--lime); font-weight: 700; }
+    footer { padding: 40px 0 60px; display: flex; justify-content: space-between; gap: 20px; color: var(--muted); }
+    @media (max-width: 760px) {
+      .shell { width: min(100% - 26px, 1040px); }
+      header { padding-top: 20px; }
+      .hero { padding: 62px 0 48px; }
+      .grid { grid-template-columns: 1fr; }
+      .card { min-height: auto; }
+      footer { flex-direction: column; }
+    }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="brand"><div class="n" aria-hidden="true">N</div><span>NOVIG BOOTH</span></div>
+  <div class="shell">
+    <header>
+      <div class="brand"><span class="mark">N</span><span>NOVIG BOOTH</span></div>
+      <a class="back" href="./">Open the booth</a>
+    </header>
 
-  <h1>How this <em>was built</em></h1>
-  <p class="sub">
-    The complete record of Novig Booth: Get Capped. The structure, the system, how it worked,
-    what was done, and a full master prompt any coding agent (Codex, Claude, or the next one)
-    can use to recreate it from zero.
-  </p>
+    <div class="hero">
+      <div class="eyebrow">novig: for the cup</div>
+      <h1>One photo. Three finishes.</h1>
+      <p class="lede">A live World Cup photobooth that turns one portrait and one $50 team choice into three polished, downloadable match cards.</p>
+      <div class="pills">
+        <span class="pill">Next.js 16</span>
+        <span class="pill">Codex built-in Image Gen</span>
+        <span class="pill">Gemini fallback</span>
+        <span class="pill">Live slate sync</span>
+        <span class="pill">48 tournament teams</span>
+        <span class="pill">Pure canvas cards</span>
+      </div>
+    </div>
 
-  <span class="pill">Next.js 16</span>
-  <span class="pill">TypeScript</span>
-  <span class="pill">Pure canvas</span>
-  <span class="pill">Gemini image edit</span>
-  <span class="pill">No app storage</span>
-  <span class="pill">Vercel ready</span>
+    <main>
+      <section>
+        <h2>The public experience</h2>
+        <p class="muted">The booth keeps the interface deliberately small. A guest takes or uploads one photo, chooses one of the two teams in the current match, and receives three finished cards. The trade amount stays fixed at $50.</p>
+        <div class="grid">
+          <article class="card"><div class="number">01</div><h3>Capture</h3><p>Use the camera, upload a portrait, or load a synthetic test portrait in developer mode.</p></article>
+          <article class="card"><div class="number">02</div><h3>Choose</h3><p>Pick either team and see only current odds, profit to win, and implied chance.</p></article>
+          <article class="card"><div class="number">03</div><h3>Share</h3><p>Download or share the story, portrait, and square card treatments.</p></article>
+        </div>
+      </section>
 
-  <div class="hazard" aria-hidden="true"></div>
+      <section>
+        <h2>Live slate and odds</h2>
+        <p><code>app/api/slate/route.ts</code> asks ESPN's World Cup scoreboard for the current Eastern Time date and refreshes the browser every 60 seconds. The response is normalized into two team choices with American odds, implied probability, and profit on a $50 trade.</p>
+        <p class="muted">If the upstream source is unavailable, the route returns a clearly labeled, verified fallback so the booth remains testable. Developer mode exposes the source, location, draw price, every returned game, and all 48 tournament teams.</p>
+      </section>
 
-  <h2>Contents</h2>
-  <ol class="toc">
-    <li><a href="#what">What this is</a></li>
-    <li><a href="#structure">The structure</a></li>
-    <li><a href="#system">The system</a></li>
-    <li><a href="#how">How it worked</a></li>
-    <li><a href="#done">What was done</a></li>
-    <li><a href="#deploy">Deploy and test</a></li>
-    <li><a href="#recreate">Recreate with any agent</a></li>
-    <li><a href="#pitfalls">Pitfalls the next agent should know</a></li>
-  </ol>
+      <section>
+        <h2>AI portrait editing</h2>
+        <p><code>app/api/codex-image-job/route.ts</code> creates a workspace-only handoff for Codex's built-in Image Gen. It writes the normalized input and exact team prompt to <code>.codex/booth-image-job</code>, then the page polls for the generated result. No API key is required for this local test.</p>
+        <p>The prompt preserves the guest's face, skin tone, body proportions, hair, expression, and camera angle. It changes only wardrobe, prop, and background styling. France uses an exaggerated football-emperor costume with comic medals and a tiny crown, while explicitly excluding real insignia and authoritarian symbols.</p>
+        <div class="callout">The browser cannot invoke Codex tools directly. The local handoff keeps that boundary honest while still making the real generated portrait available to the final square export.</div>
+        <p class="muted" style="margin-top:18px"><code>app/api/generate/route.ts</code> keeps OpenAI and Gemini as optional production providers. They are not required for the local Codex workflow.</p>
+      </section>
 
-  <h2 id="what">1. What this is</h2>
-  <div class="card">
-    <p>
-      Novig Booth: Get Capped is a Cup photobooth for Novig, a peer to peer prediction market
-      with zero vig. A user snaps a selfie, an AI image model dresses them in their nation's
-      colors with one signature prop, and their trading slip is printed on a shareable
-      1080x1920 or 1080x1080 poster card with a promo code and a scannable QR.
-      The portrait prints as a real photo, straight photobooth style, no filters.
-    </p>
-    <p>
-      <a href="./">Open the booth</a>. It runs fully in mock mode with no keys:
-      generation waits two seconds and returns your original photo, so every screen,
-      the loading theater, the slot machine reveal, the confetti, the download, and the
-      share flow can be demoed anywhere.
-    </p>
+      <section>
+        <h2>One definitive share design</h2>
+        <div class="grid">
+          <article class="card"><div class="number">SQUARE 1:1</div><h3>Gallery Slip</h3><p>A Renaissance-inspired portrait in an antique-gold frame, finished with editorial serif type and an engraved data plaque.</p></article>
+        </div>
+        <p class="muted" style="margin-top:22px">The 1080 by 1080 export contains the selected team, opponent, round, venue, live odds, implied chance, fixed stake, and return. It intentionally contains no QR code.</p>
+      </section>
+
+      <section>
+        <h2>Run it locally</h2>
+        <pre><code>npm install
+npm run dev
+# open http://localhost:3000/</code></pre>
+        <p class="muted">Pick a side, take one photo, and let the active Codex task process the queued image job. The page detects the matching result automatically and renders the finished Gallery Slip.</p>
+      </section>
+
+      <section>
+        <h2>Verification checklist</h2>
+        <ol>
+          <li>Type-check and create a production Next.js build.</li>
+          <li>Confirm the live slate endpoint returns the current match and source status.</li>
+          <li>Exercise the public path at desktop and mobile sizes.</li>
+          <li>Render the native 1080 by 1080 canvas and confirm the framed portrait and live values remain legible.</li>
+          <li>Run a real built-in Image Gen edit and load the matching result into the Gallery Slip.</li>
+          <li>Check the repository for prohibited copy before deployment.</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer><span>novig: winners welcome</span><a href="https://novig.us">novig.us</a></footer>
   </div>
-
-  <h2 id="structure">2. The structure</h2>
-  <div class="card">
-  <table>
-    <tr><th>Path</th><th>Role</th></tr>
-    <tr><td><code>app/page.tsx</code></td><td>The whole product flow as one client component: landing, capture, setup, result, loading overlay, slot reveal, share actions.</td></tr>
-    <tr><td><code>app/layout.tsx</code></td><td>Fonts via next/font/google (Archivo Black display, Space Grotesk data, Archivo body) exposed as CSS variables, plus metadata.</td></tr>
-    <tr><td><code>app/globals.css</code></td><td>Design tokens, dark UI, ticket cards with punched side notches, hazard dividers, focus states, responsive to 360px.</td></tr>
-    <tr><td><code>app/api/generate/route.ts</code></td><td>POST endpoint. Validates the photo, calls the Gemini image edit model, returns the edited portrait. Mock mode when no key. The app does not write photos to storage.</td></tr>
-    <tr><td><code>lib/composite.ts</code></td><td>Pure canvas card compositor. Every pixel of the poster card is drawn here.</td></tr>
-    <tr><td><code>lib/prompts.ts</code></td><td>Thirteen nation themes (color, ink, flag, seed, costume) and the buildPrompt template.</td></tr>
-    <tr><td><code>lib/slate.ts</code></td><td>Today's demo games and odds. Tapping a side loads a complete $100 slip.</td></tr>
-    <tr><td><code>lib/copy.ts</code></td><td>All product copy: pose prompts, loading lines, captions, sanitizers, promo code.</td></tr>
-    <tr><td><code>lib/confetti.ts</code></td><td>Dependency free canvas confetti burst.</td></tr>
-    <tr><td><code>lib/analytics.ts</code></td><td>logEvent(name, payload) console stubs.</td></tr>
-    <tr><td><code>scripts/build-demo.sh</code></td><td>Builds a fully static bundle into docs/ for CDN demo hosting.</td></tr>
-    <tr><td><code>.env.local.example</code></td><td>GEMINI_API_KEY and NEXT_PUBLIC_DEFAULT_CODE.</td></tr>
-  </table>
-  </div>
-
-  <h2 id="system">3. The system</h2>
-  <div class="card">
-    <h3>Flow</h3>
-    <ol>
-      <li><strong>Landing.</strong> GET CAPPED, one button: Run the booth.</li>
-      <li><strong>Capture.</strong> getUserMedia front camera, mirrored preview, pose prompts rotating every 2.3s, Snap it, and an always visible Upload a photo fallback. Camera denial flips upload to the primary action with a friendly note.</li>
-      <li><strong>Setup.</strong> Today's slate (tap a side, get a filled $100 slip), thirteen nation chips, editable slip fields with auto computed to win, LOCKED / CAPPED / COOKED status, Story or Square format.</li>
-      <li><strong>Generate.</strong> POST the photo to /api/generate. Full screen overlay cycles eight lines every 640ms. A minimum 3.2s of theater is enforced even if the model returns faster.</li>
-      <li><strong>Reveal.</strong> The card re-renders 7 times with random nation themes at 120 to 300ms intervals, settles on the chosen nation, and fires a canvas confetti burst. prefers-reduced-motion skips both.</li>
-      <li><strong>Result.</strong> Download PNG, Copy caption, Share (Web Share API with file support when available, text fallback otherwise).</li>
-    </ol>
-    <h3>The card, drawn in pure canvas</h3>
-    <ul>
-      <li>Top block (46% story, 42% square) in the nation color: eyebrow line (matchup and market), the status word in huge outlined strokeText, TO WIN plus the dollar amount at the largest size that fits inside 76px margins, an outlined odds line, then side and stake in small caps. The whole stack height clamps to the block.</li>
-      <li>A diagonal hazard stripe band of rotated rectangles divides the blocks.</li>
-      <li>Bottom block: the portrait as a real photo, cover cropped with a slight bias toward the face. No dither, no duotone, no scanlines, no shading.</li>
-      <li>Vertical rail text on both edges with a soft shadow for legibility over bright photos.</li>
-      <li>A floating dark ticket strip with scallop circles punched out of its top edge via destination-out, a rounded blue N logo, CODE {CODE}, a novig.us subline, and a white QR chip encoding https://novig.us/?code={CODE}.</li>
-      <li>An AI FIT pill badge stamped with the costume seed.</li>
-    </ul>
-    <h3>Generation and privacy</h3>
-    <ul>
-      <li>The API accepts { imageBase64, countryCode, format }, checks mime (jpeg or png) and decoded size (3MB), and calls gemini-3.1-flash-image with a costume prompt that keeps the face unchanged and forbids logos, crests, text, and real athletes.</li>
-      <li>No key present: the server waits 2s and echoes the photo back with { mock: true }.</li>
-      <li>No API present at all (static hosting): the browser detects the missing endpoint and runs the same mock locally.</li>
-      <li>The app does not write uploads to a database or file store. In AI mode, the photo is processed by Google Gemini and is subject to the connected API plan's logging and retention terms.</li>
-    </ul>
-  </div>
-
-  <h2 id="how">4. How it worked</h2>
-  <div class="card">
-    <p>
-      One coding agent (Claude Code, running remotely against the GitHub repo) built this
-      end to end from a single product brief, in a loop of build, verify with real tools,
-      fix what the verification exposed, and push. The important part was that every claim
-      got checked by machinery, not by eyeballing code:
-    </p>
-    <ul>
-      <li><strong>Build gate.</strong> npm run build after every change set.</li>
-      <li><strong>Browser truth.</strong> Playwright drove the real app headlessly: landing, upload, slate picks, generate, reveal, result, while collecting every console error (the bar was zero).</li>
-      <li><strong>Pixel truth.</strong> The rendered card canvas was exported to PNG and visually inspected by the agent. This caught two real bugs no unit test would have found (see pitfalls).</li>
-      <li><strong>QR truth.</strong> Card PNGs were decoded with jsQR to prove the QR actually scans to the right URL.</li>
-      <li><strong>Accessibility.</strong> Lighthouse ran against the production build (score: 100).</li>
-      <li><strong>Copy rules.</strong> Repo wide greps enforced the banned word list and the no em dash rule on every commit.</li>
-    </ul>
-  </div>
-
-  <h2 id="done">5. What was done</h2>
-  <div class="card">
-    <ol>
-      <li>Wiped the previous repo down to .git and .gitignore, scaffolded the Next.js App Router in TypeScript from scratch.</li>
-      <li>Built the full flow, the canvas compositor, thirteen nation themes, the Gemini route with mock mode, fonts, confetti, and share actions.</li>
-      <li>Verified in the browser and caught a silent canvas font failure and a type stack overflow; fixed both (pitfalls 1 and 2).</li>
-      <li>Made the QR render at an integer pixels per module scale so it stays scannable (pitfall 3), then proved it decodes.</li>
-      <li>Added today's slate with three preset games and both sides tappable at demo odds, auto filling a $100 slip.</li>
-      <li>Added Colombia (sombrero vueltiao, carnival feathers, coffee raised like a trophy), Ghana (kente sash, gold Ashanti crown, calabash rattle, black star confetti), and Cape Verde (shark fin hood, coconut, island light).</li>
-      <li>Design pass: gradient primary button, ticket card shadows, hover and focus states, entrance animation, LIVE tag, footer.</li>
-      <li>Removed the original ordered dither treatment entirely after direction changed: the portrait now prints as a real photo, like a classic photobooth strip.</li>
-      <li>Added the static demo build so the whole booth runs on any static CDN in browser side mock mode, and published it from docs/.</li>
-      <li>Wrote this page.</li>
-    </ol>
-  </div>
-
-  <h2 id="deploy">6. Deploy and test</h2>
-  <div class="card">
-    <h3>Vercel (production, real AI fits)</h3>
-    <ol>
-      <li>Go to <a href="https://vercel.com/new">vercel.com/new</a> and import <code>goldytalks/derby-dashboard</code>. No settings needed; the repo is zero config.</li>
-      <li>Add <code>GEMINI_API_KEY</code> in Project Settings, Environment Variables. Without it the app still works in mock mode.</li>
-      <li>Optionally set <code>NEXT_PUBLIC_DEFAULT_CODE</code> to change the promo code (default GETCAPPED).</li>
-    </ol>
-    <p>Or from a terminal with the Vercel CLI: <code>vercel</code>, add the key, done.</p>
-    <h3>Static demo (no server, mock only)</h3>
-    <p><code>bash scripts/build-demo.sh</code> writes a static bundle to <code>docs/</code>. Commit and serve it from any static host or CDN.</p>
-    <h3>Local</h3>
-    <p><code>npm install</code> then <code>npm run dev</code>. No env vars needed.</p>
-    <h3>What to check when testing</h3>
-    <ul>
-      <li>Camera capture and upload both produce a card; camera denial shows the upload path.</li>
-      <li>Generate shows at least 3.2s of loading theater, then the slot roll, then confetti.</li>
-      <li>Download produces a correct 1080x1920 or 1080x1080 PNG and the QR scans from a phone.</li>
-      <li>The three slate games load correct $100 slips (to win $120, $160, $69, $650 depending on side).</li>
-      <li>Reduced motion devices get the final card instantly with no roll or confetti.</li>
-    </ul>
-  </div>
-
-  <h2 id="recreate">7. Recreate with any agent</h2>
-  <p>
-    Give a coding agent (Codex, Claude Code, or any other) the master prompt below, plus the
-    operating loop that follows it. The prompt is the distilled, corrected version of what
-    actually shipped, with every lesson already folded in.
-  </p>
-
-  <div class="copybar">
-    <h3 style="margin:0">Master prompt</h3>
-    <button type="button" onclick="const t=document.getElementById('master').innerText;navigator.clipboard.writeText(t).then(()=>{this.textContent='Copied';setTimeout(()=>this.textContent='Copy prompt',1500)})">Copy prompt</button>
-  </div>
-<pre id="master"><code>You are building "Novig Booth: Get Capped", a viral Cup photobooth web app for
-Novig, a peer to peer sports prediction market. A user snaps a selfie, an AI
-image model dresses them in their nation's colors with one signature prop, and
-their trading slip is composited onto a shareable poster card with a promo code
-and QR. Ship a production ready Next.js 16 App Router project in TypeScript,
-deployable to Vercel with zero config. Build the complete project, all files,
-no placeholders.
-
-PRODUCT FLOW
-1. Landing: headline GET CAPPED, one button labeled Run the booth.
-2. Capture: getUserMedia front camera with playsinline muted video, mirrored
-   preview, rotating pose prompts every 2.3 seconds from lib/copy.ts, a Snap it
-   button, and an Upload a photo fallback that is always visible. If camera
-   permission fails, show the upload path with a friendly note and make upload
-   the primary button. Mirror the captured frame so it matches the preview.
-3. Setup, in this order:
-   a. Today's slate card, label "Today's slate, $100 trade": three games,
-      each side a tappable pill showing side name and american odds. Tapping
-      loads the full slip (matchup, Moneyline, side, odds, stake 100, computed
-      to win) and selects that nation. Games: Australia vs Egypt with a pulsing
-      LIVE tag (AUS +120, EGY -140), Colombia vs Ghana (COL -145, GHA +160),
-      Argentina vs Cape Verde (ARG -450, CPV +650). Mark a TODO to pull the
-      live slate from the Novig API.
-   b. Nation chips for the thirteen nations below.
-   c. Slip fields: matchup, market, side, american odds, stake, to win. To win
-      auto computes from odds and stake until the user edits it manually.
-      Sanitize on the client: strip angle brackets, cap lengths (these strings
-      render onto the card).
-   d. Status toggle: LOCKED (open position), CAPPED (won), COOKED (lost).
-   e. Format toggle: Story 1080x1920 or Square 1080x1080.
-4. Generate: POST the photo to /api/generate. Full screen overlay cycling these
-   lines every 640ms: Making magic. Generating history. Being iconic. Calling
-   up the squad. Stitching your kit. Notifying the group chat. Printing your
-   ticket. Cueing the anthem. Enforce a minimum 3.2 second theater time.
-5. Reveal: slot machine roll. Re-render the card 7 times with random nation
-   themes at 120 to 300ms intervals, then settle on the chosen nation with a
-   dependency free canvas confetti burst. Respect prefers-reduced-motion by
-   skipping the roll and confetti.
-6. Result: card preview canvas plus Download PNG, Copy caption, Share (Web
-   Share API with file support when available, text fallback), and Run it
-   back. Caption: "Just got capped for {country}. {Riding for | Won | Down}
-   ${amount}. Trade the Cup with me on Novig. Code {CODE}." Amount is to win
-   for LOCKED and CAPPED, stake for COOKED. Mark a TODO for a phase two
-   Higgsfield motion card call.
-
-CARD SPEC (lib/composite.ts, pure canvas, only the qrcode npm package)
-Top 46 percent (42 for square): solid nation color, type stack in the nation
-ink color, centered, all sizes shrink to fit inside 76px side margins, and the
-whole stack height must clamp to fit the block: eyebrow line (matchup and
-market, Space Grotesk 700, letterspaced, uppercase), status word in huge
-outlined display type (strokeText only, Archivo Black), TO WIN label then the
-dollar amount at the largest size that fits (solid), outlined odds line
-(ODDS +117), side and stake line in small caps. Divider: a diagonal hazard
-stripe band of rotated rectangles in the ink color. Bottom block: the user
-portrait as a REAL PHOTO, cover cropped with the crop biased slightly toward
-the top so faces stay in frame. No dither, no duotone, no scanlines, no
-filters of any kind on the face. Vertical rail text rotated 90 degrees on both
-edges with a soft dark shadow for legibility: left NOVIG BOOTH GET CAPPED,
-right PEER TO PEER ZERO VIG. Floating dark ticket strip near the bottom,
-rounded 20px, scallop circles punched out of its top edge via destination-out,
-containing a blue rounded N logo square, CODE {CODE} in Space Grotesk 700, a
-subline "novig.us | trade the Cup", and a white QR chip on the right encoding
-https://novig.us/?code={CODE}. Render the QR at an integer pixels per module
-scale sized to the chip and draw it 1:1, never resampled. Stamp a small pill
-badge reading AI FIT plus the costume seed. COOKED status overrides any theme
-to bg #1A1A1F ink #FF5060.
-
-NATION MAP (lib/prompts.ts)
-Export { code, name, flag, bg, ink, seed, costume }[] and buildPrompt(country).
-USA #1CA3F5 white, denim cutoff with eagle patches, stars and stripes bandana,
-gold aviators, sparklers. MEX #0B7A3B white, green kit, matching bucket hat,
-luchador mask pushed up on the forehead. ARG #7CC0F0 ink #0B2545, sky and
-white striped kit, mate gourd raised like a trophy, ticker tape. BRA #F3C500
-ink #0B3D1E, canary yellow kit, carnival feather collar, samba drum. ENG
-#C8102E white, white kit, knight helmet under the arm, cup of tea. FRA #002F87
-white, navy kit, beret, baguette held like a scepter. JPN #10265F white, deep
-blue kit with samurai shoulder armor, rising sun flare. EGY #B01827 white, red
-kit with gold pharaoh headdress, hieroglyph confetti. AUS #FFB301 ink #123B26,
-gold kit, peeking out of a giant kangaroo pouch. CAN #D80621 white, red kit,
-mountie hat, maple syrup bottle raised. COL #FCD116 ink #12307B, yellow kit,
-woven sombrero vueltiao, red and blue carnival feather boa, Colombian coffee
-raised like a trophy. GHA #E8B217 ink #151512, white kit with kente cloth
-sash, gold Ashanti crown, beaded calabash rattle, black star confetti. CPV
-#0057C8 white, deep blue kit, playful shark fin hood, fresh coconut, island
-beach light. Prompt template: "Edit this photo. Keep this exact person's face,
-expression, and skin tone unchanged. Dress them in {costume}. The kit is a
-generic unbranded sports jersey in national colors with no logos, no crests,
-no sponsor marks, no text. Stadium tunnel background, falling confetti,
-dramatic sports poster lighting, 35mm photo, hyper real. Do not add any text
-or watermarks. Do not depict any real athlete."
-
-API (app/api/generate/route.ts)
-POST { imageBase64 data URL, countryCode, format }. Validate mime image/jpeg
-or image/png and decoded size under 3MB so base64 JSON stays below Vercel's
-4.5MB request and response payload limit. Call gemini-3.1-flash-image via the
-generativelanguage REST API with the photo plus buildPrompt(country), key from
-process.env.GEMINI_API_KEY. Return { imageBase64 } of the edited portrait.
-Request image only at 1K and match the chosen 9:16 or 1:1 aspect ratio.
-Treat a missing image part, a block reason, or a safety finish reason as a
-friendly 422 retry message. Do not write uploads to app storage. Clearly tell
-users that AI mode sends their photo to Google and that Google handles it under
-the connected Gemini API plan. maxDuration 30. If the key
-is missing, MOCK MODE: wait 2 seconds, return the original photo with
-{ mock: true }. On the client, if the endpoint returns non JSON or the fetch
-fails (static hosting), fall back to the same mock behavior in the browser.
-
-DESIGN TOKENS
-Novig blue #1CA3F5, ink #0E0E12, ticket #121216, paper #F4F8FC, green #35D07F,
-red #E5364B. Archivo Black display, Space Grotesk data, Archivo body via
-next/font/google. Wait for document.fonts before the first canvas render. Dark
-UI, ticket cards with punched side notches, hazard stripe dividers, visible
-keyboard focus states, responsive to 360px.
-
-HARD COPY RULES
-Product copy uses trade, trading, position, slip, cashed, to win. The common
-three letter wagering verb (b + e + t) and its -ting gerund are banned from
-the entire repo: UI copy, comments, docs, everything. Never use em dashes
-anywhere: UI copy, comments, docs, commit messages. Say the Cup or the
-tournament, never the governing body's trademarks. No official crests or
-sponsor marks in prompts or assets. No real athletes.
-
-FILES
-app/page.tsx, app/layout.tsx, app/globals.css, app/api/generate/route.ts,
-lib/prompts.ts, lib/composite.ts, lib/copy.ts, lib/slate.ts, lib/confetti.ts,
-lib/analytics.ts (logEvent console stubs), scripts/build-demo.sh (static
-export into docs/ with NEXT_STATIC_DEMO=1, NEXT_PUBLIC_STATIC_DEMO=1, and an
-asset prefix, setting the api dir aside during the build), .env.local.example,
-vercel.json, README.md with two line deploy instructions.
-
-ACCEPTANCE
-Camera capture and upload both produce a card. Generate shows at least 3.2s of
-theater, then the roll, then confetti. Downloads are exact 1080x1920 and
-1080x1080 PNGs and the QR decodes to the right URL. Mock mode works with zero
-env vars. Slate taps produce to win $120 / $160 / $69 / $650 on a $100 stake.
-Lighthouse accessibility 90 plus. Zero console errors. The banned words and em
-dashes appear nowhere in the repo.</code></pre>
-
-  <h3>The operating loop that made it work</h3>
-  <div class="card">
-    <ol>
-      <li>Build everything, then run <code>npm run build</code>. Fix until clean.</li>
-      <li>Start the production server and drive the real UI with a headless browser (Playwright): landing, upload a synthetic test photo, tap a slate side, generate, wait out the reveal. Collect every console error; the pass bar is zero.</li>
-      <li>Export the card canvas to PNG and LOOK at it. Canvas bugs hide from tests and typecheckers; they are obvious in pixels.</li>
-      <li>Decode the QR from the exported PNG (jsQR) and assert the exact URL.</li>
-      <li>Run Lighthouse accessibility against the production build; hold 90 plus.</li>
-      <li>Grep the repo for the banned words and for em dashes on every commit.</li>
-      <li>Test the reduced motion path and the camera denial path explicitly.</li>
-    </ol>
-  </div>
-
-  <h2 id="pitfalls">8. Pitfalls the next agent should know</h2>
-  <div class="card">
-    <ol>
-      <li><span class="warn">Canvas fonts fail silently.</span> ctx.font keeps its previous value if the assignment is invalid. next/font can emit a fallback list containing an invalid entry (a two word fallback like Arial Black got serialized in a way that broke the whole font-family list), which made every headline render tiny in the wrong face while everything still "worked". Fix: use single word fallbacks in next/font, and in the compositor take only the first family from the CSS variable and append your own known good fallbacks. Verify by rendering and looking at the PNG.</li>
-      <li><span class="warn">Shrink to fit must clamp both axes.</span> Fitting each line to the card width is not enough; the stacked heights can overflow the color block on the square format. Compute the stack height and scale every size down proportionally when it exceeds the room.</li>
-      <li><span class="warn">Never resample a QR.</span> Scaling a rendered QR to a fractional size antialiases the modules and can break scanning. Include a four module quiet zone, pick the largest integer scale that fits the chip, render at exactly that size, draw 1:1, and prove it by decoding the final PNG.</li>
-      <li><span class="warn">Wait for fonts before canvas.</span> Measure and draw only after document.fonts resolves or the first render uses fallback metrics.</li>
-      <li><span class="warn">Headless containers have no camera.</span> getUserMedia fails even with fake device flags in some environments. Make the upload path first class and test the denial path; test real capture on a phone.</li>
-      <li><span class="warn">Static hosts have no API.</span> If you want the demo to run on a CDN, detect the missing endpoint (non JSON response or failed fetch) and run mock mode in the browser.</li>
-      <li><span class="warn">Vercel payloads stop at 4.5MB.</span> A raw 8MB image becomes larger when base64 encoded and cannot reach the function. Keep decoded request and response images at 3MB or less, or move media through direct storage uploads.</li>
-      <li><span class="warn">No app storage is not zero retention.</span> The app does not save photos, but an enabled AI request sends the photo to Google Gemini. Disclose that processing and configure the Gemini project for the retention policy you need.</li>
-      <li><span class="warn">Copy rules are grep rules.</span> Banned words and punctuation sneak in through comments and docs. Enforce with repo wide greps, not memory.</li>
-    </ol>
-  </div>
-
-  <footer>Peer to peer. Zero vig. <a href="https://novig.us">novig.us</a></footer>
-</div>
 </body>
 </html>

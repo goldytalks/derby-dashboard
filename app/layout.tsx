@@ -1,5 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, Archivo_Black, Space_Grotesk } from "next/font/google";
+import {
+  Archivo,
+  Archivo_Black,
+  Cormorant_Garamond,
+  Space_Grotesk,
+} from "next/font/google";
 import "./globals.css";
 
 const displayFont = Archivo_Black({
@@ -26,10 +31,18 @@ const bodyFont = Archivo({
   fallback: ["Helvetica", "Arial", "sans-serif"],
 });
 
+const editorialFont = Cormorant_Garamond({
+  weight: ["500", "600", "700"],
+  subsets: ["latin"],
+  variable: "--font-editorial",
+  display: "swap",
+  fallback: ["Georgia", "Times New Roman", "serif"],
+});
+
 export const metadata: Metadata = {
-  title: "Novig Booth: Get Capped",
+  title: "Novig Booth | novig: for the cup",
   description:
-    "Snap a selfie, get dressed in your nation's colors, and share your Cup trading slip as a poster card.",
+    "One photo becomes a team-styled portrait inside a square, shareable Gallery Slip.",
 };
 
 export const viewport: Viewport = {
@@ -46,7 +59,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${displayFont.variable} ${dataFont.variable} ${bodyFont.variable}`}
+      className={`${displayFont.variable} ${dataFont.variable} ${bodyFont.variable} ${editorialFont.variable}`}
     >
       <body>{children}</body>
     </html>

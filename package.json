@@ -2,7 +2,7 @@
   "name": "novig-booth",
   "version": "1.0.0",
   "private": true,
-  "description": "Novig Booth: Get Capped. A Cup photobooth that dresses you in your nation's colors and prints your trading slip on a shareable poster card.",
+  "description": "A Codex Mini-App that turns one fan photo into a team-styled, square Novig Gallery Slip.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "next": "16.2.10",
+    "openai": "^6.46.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

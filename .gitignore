@@ -29,6 +29,9 @@ pnpm-debug.log*
 # vercel
 .vercel
 
+# local Codex Image Gen handoff
+.codex/booth-image-job/
+
 # typescript
 *.tsbuildinfo
 

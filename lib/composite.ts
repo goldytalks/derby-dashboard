@@ -1,11 +1,44 @@
-// Pure canvas card compositor. The only import besides local libs is the
-// qrcode package, which renders the promo QR into an offscreen canvas.
-
 import QRCode from "qrcode";
-import { COOKED_THEME, type CountryTheme } from "@/lib/prompts";
 import type { SlipStatus } from "@/lib/copy";
+import type { CountryTheme } from "@/lib/prompts";
 
-export type CardFormat = "story" | "square";
+export type CardStyle = "poster" | "editorial" | "scoreboard";
+
+export interface CardVariant {
+  id: CardStyle;
+  name: string;
+  format: string;
+  width: number;
+  height: number;
+  description: string;
+}
+
+export const CARD_VARIANTS: CardVariant[] = [
+  {
+    id: "poster",
+    name: "Victory Poster",
+    format: "Story 9:16",
+    width: 1080,
+    height: 1920,
+    description: "Full-bleed tunnel portrait with a stadium-poster finish.",
+  },
+  {
+    id: "editorial",
+    name: "Matchday Cover",
+    format: "Portrait 4:5",
+    width: 1080,
+    height: 1350,
+    description: "A restrained editorial cover with premium paper details.",
+  },
+  {
+    id: "scoreboard",
+    name: "Gallery Slip",
+    format: "Square 1:1",
+    width: 1080,
+    height: 1080,
+    description: "A gilded, portrait-first collectible made for sharing.",
+  },
+];
 
 export interface Slip {
   matchup: string;
@@ -14,6 +47,7 @@ export interface Slip {
   odds: string;
   stake: string;
   toWin: string;
+  probability: string;
 }
 
 export interface CardOptions {
@@ -21,520 +55,635 @@ export interface CardOptions {
   country: CountryTheme;
   status: SlipStatus;
   slip: Slip;
-  format: CardFormat;
+  style: CardStyle;
   code: string;
   seed: string;
-}
-
-const NEAR_BLACK = "#0A0A10";
-const TICKET = "#121216";
-const NOVIG_BLUE = "#1CA3F5";
-const MARGIN = 76;
-
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.replace("#", ""), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-function mixTowardWhite(hex: string, amount: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  const to2 = (c: number) => c.toString(16).padStart(2, "0");
-  return `#${to2(mix(r))}${to2(mix(g))}${to2(mix(b))}`;
-}
-
-// Straight photobooth print: cover crop the photo into the region,
-// biased slightly toward the top so faces stay in frame.
-function drawImageCover(
-  ctx: CanvasRenderingContext2D,
-  source: HTMLImageElement | HTMLCanvasElement,
-  x: number,
-  y: number,
-  w: number,
-  h: number
-) {
-  const sw =
-    source instanceof HTMLImageElement ? source.naturalWidth : source.width;
-  const sh =
-    source instanceof HTMLImageElement ? source.naturalHeight : source.height;
-  if (!sw || !sh) return;
-  const scale = Math.max(w / sw, h / sh);
-  const srcW = w / scale;
-  const srcH = h / scale;
-  const sx = (sw - srcW) / 2;
-  const sy = (sh - srcH) * 0.38;
-  ctx.drawImage(source, sx, sy, srcW, srcH, x, y, w, h);
+  round?: string;
+  venue?: string;
 }
 
 interface FontSet {
   display: string;
   data: string;
   body: string;
+  editorial: string;
 }
 
+const NOVIG_BLUE = "#1CA3F5";
+const INK = "#0A0A10";
+const PAPER = "#F4F1E9";
+const TICKET = "#121216";
+
 let cachedFonts: FontSet | null = null;
+let fontsReady = false;
+const qrCache = new Map<string, HTMLCanvasElement>();
+let brandMarksPromise: Promise<{
+  blue: HTMLImageElement;
+  white: HTMLImageElement;
+  wordmark: HTMLImageElement;
+}> | null = null;
+
+function loadCanvasImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Could not load brand asset: ${src}`));
+    image.src = src;
+  });
+}
+
+function getBrandMarks(): Promise<{
+  blue: HTMLImageElement;
+  white: HTMLImageElement;
+  wordmark: HTMLImageElement;
+}> {
+  if (!brandMarksPromise) {
+    brandMarksPromise = Promise.all([
+      loadCanvasImage("/brand/novig-mark-blue.png"),
+      loadCanvasImage("/brand/novig-mark-white.png"),
+      loadCanvasImage("/brand/novig-wordmark.svg"),
+    ]).then(([blue, white, wordmark]) => ({ blue, white, wordmark }));
+  }
+  return brandMarksPromise;
+}
 
 function fontFamilies(): FontSet {
   if (cachedFonts) return cachedFonts;
   const styles = getComputedStyle(document.documentElement);
-  // Take only the first family from each variable. A single bad entry
-  // later in the list would invalidate the whole ctx.font assignment,
-  // and canvas fails silently by keeping the previous font.
   const read = (name: string, fallback: string) => {
     const first = styles.getPropertyValue(name).trim().split(",")[0]?.trim();
     return first ? `${first}, ${fallback}` : fallback;
   };
   cachedFonts = {
-    display: read("--font-display", '"Archivo Black", sans-serif'),
-    data: read("--font-data", '"Space Grotesk", sans-serif'),
-    body: read("--font-body", "Archivo, sans-serif"),
+    display: read("--font-display", '"Arial Black", sans-serif'),
+    data: read("--font-data", "Arial, sans-serif"),
+    body: read("--font-body", "Arial, sans-serif"),
+    editorial: read("--font-editorial", 'Georgia, "Times New Roman", serif'),
   };
   return cachedFonts;
 }
 
-let fontsReady = false;
-
-// Canvas text measures wrong if the webfonts have not arrived yet,
-// so every render awaits this once before drawing.
 export async function ensureFontsLoaded(): Promise<void> {
   if (fontsReady || typeof document === "undefined") return;
-  const f = fontFamilies();
+  const fonts = fontFamilies();
   try {
     await Promise.all([
-      document.fonts.load(`400 100px ${f.display}`),
-      document.fonts.load(`700 40px ${f.data}`),
-      document.fonts.load(`500 40px ${f.data}`),
-      document.fonts.load(`400 40px ${f.body}`),
+      document.fonts.load(`400 100px ${fonts.display}`),
+      document.fonts.load(`700 40px ${fonts.data}`),
+      document.fonts.load(`500 40px ${fonts.data}`),
+      document.fonts.load(`400 40px ${fonts.body}`),
+      document.fonts.load(`600 72px ${fonts.editorial}`),
+      document.fonts.load(`700 72px ${fonts.editorial}`),
       document.fonts.ready,
     ]);
   } catch {
-    // Fall through to system faces rather than blocking the render.
+    // System fonts keep the booth usable if a webfont is slow.
   }
   fontsReady = true;
-}
-
-const qrCache = new Map<string, HTMLCanvasElement>();
-
-// Render at an integer pixels-per-module scale and draw 1:1 later.
-// Resampling a QR breaks its modules and makes it hard to scan.
-async function getQrCanvas(
-  code: string,
-  maxSize: number
-): Promise<HTMLCanvasElement> {
-  const text = `https://novig.us/?code=${encodeURIComponent(code)}`;
-  const modules = QRCode.create(text, { errorCorrectionLevel: "M" }).modules
-    .size;
-  const quietZoneModules = 4;
-  const scale = Math.max(
-    2,
-    Math.floor(maxSize / (modules + quietZoneModules * 2))
-  );
-  const cacheKey = `${code}:${scale}`;
-  const hit = qrCache.get(cacheKey);
-  if (hit) return hit;
-  const canvas = document.createElement("canvas");
-  await QRCode.toCanvas(canvas, text, {
-    margin: quietZoneModules,
-    scale,
-    errorCorrectionLevel: "M",
-    color: { dark: "#0E0E12", light: "#FFFFFF" },
-  });
-  qrCache.set(cacheKey, canvas);
-  return canvas;
-}
-
-function setLetterSpacing(ctx: CanvasRenderingContext2D, value: string) {
-  const anyCtx = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
-  if ("letterSpacing" in anyCtx) anyCtx.letterSpacing = value;
-}
-
-function fitFontSize(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  family: string,
-  weight: string,
-  startSize: number,
-  maxWidth: number
-): number {
-  let size = startSize;
-  ctx.font = `${weight} ${size}px ${family}`;
-  while (size > 14 && ctx.measureText(text).width > maxWidth) {
-    size -= 4;
-    ctx.font = `${weight} ${size}px ${family}`;
-  }
-  return size;
 }
 
 function roundedRectPath(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  w: number,
-  h: number,
-  r: number
+  width: number,
+  height: number,
+  radius: number
 ) {
+  const r = Math.min(radius, width / 2, height / 2);
   ctx.beginPath();
   ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
   ctx.closePath();
 }
 
-function drawHazardBand(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  centerY: number,
-  bandHeight: number,
-  bg: string,
-  ink: string
-) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, centerY - bandHeight / 2, width, bandHeight);
-  ctx.clip();
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, centerY - bandHeight / 2, width, bandHeight);
-  ctx.fillStyle = ink;
-  const stripeW = 26;
-  const step = stripeW * 2.4;
-  for (let x = -bandHeight; x < width + bandHeight; x += step) {
-    ctx.save();
-    ctx.translate(x, centerY);
-    ctx.rotate(-Math.PI / 4);
-    ctx.fillRect(-stripeW / 2, -bandHeight, stripeW, bandHeight * 2);
-    ctx.restore();
-  }
-  ctx.restore();
+function setLetterSpacing(ctx: CanvasRenderingContext2D, value: string) {
+  const canvasContext = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
+  if ("letterSpacing" in canvasContext) canvasContext.letterSpacing = value;
 }
 
-function drawRailText(
+function fitText(
   ctx: CanvasRenderingContext2D,
   text: string,
-  x: number,
-  centerY: number,
-  color: string,
   family: string,
-  clockwise: boolean
-) {
-  ctx.save();
-  ctx.translate(x, centerY);
-  ctx.rotate(clockwise ? Math.PI / 2 : -Math.PI / 2);
-  ctx.font = `700 24px ${family}`;
-  setLetterSpacing(ctx, "8px");
-  ctx.fillStyle = color;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  // Soft shadow keeps the rails readable over bright photos.
-  ctx.shadowColor = "rgba(10, 10, 16, 0.75)";
-  ctx.shadowBlur = 10;
-  ctx.fillText(text, 0, 0);
-  setLetterSpacing(ctx, "0px");
-  ctx.restore();
-}
-
-interface TicketArea {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-function drawTicketStrip(
-  ctx: CanvasRenderingContext2D,
-  area: TicketArea,
-  code: string,
-  qr: HTMLCanvasElement,
-  fonts: FontSet
-) {
-  const strip = document.createElement("canvas");
-  strip.width = area.w;
-  strip.height = area.h;
-  const sctx = strip.getContext("2d");
-  if (!sctx) return;
-
-  sctx.fillStyle = TICKET;
-  roundedRectPath(sctx, 0, 0, area.w, area.h, 20);
-  sctx.fill();
-
-  // Scallop circles punched out of the top edge.
-  sctx.globalCompositeOperation = "destination-out";
-  const scallopR = 13;
-  const spacing = 52;
-  for (let x = spacing / 2; x < area.w; x += spacing) {
-    sctx.beginPath();
-    sctx.arc(x, 0, scallopR, 0, Math.PI * 2);
-    sctx.fill();
+  weight: string,
+  startSize: number,
+  maxWidth: number,
+  minimum = 20
+): number {
+  let size = startSize;
+  ctx.font = `${weight} ${size}px ${family}`;
+  while (size > minimum && ctx.measureText(text).width > maxWidth) {
+    size -= 4;
+    ctx.font = `${weight} ${size}px ${family}`;
   }
-  sctx.globalCompositeOperation = "source-over";
-
-  const pad = Math.round(area.h * 0.17);
-  const logoSize = area.h - pad * 2;
-
-  // Blue rounded N logo square.
-  sctx.fillStyle = NOVIG_BLUE;
-  roundedRectPath(sctx, pad, pad, logoSize, logoSize, Math.round(logoSize * 0.26));
-  sctx.fill();
-  sctx.fillStyle = "#FFFFFF";
-  sctx.font = `400 ${Math.round(logoSize * 0.58)}px ${fonts.display}`;
-  sctx.textAlign = "center";
-  sctx.textBaseline = "middle";
-  sctx.fillText("N", pad + logoSize / 2, pad + logoSize * 0.56);
-
-  // QR chip on the right. The QR canvas is drawn at its natural size,
-  // centered, so its modules stay pixel exact.
-  const chipSize = area.h - pad * 2;
-  const chipX = area.w - pad - chipSize;
-  sctx.fillStyle = "#FFFFFF";
-  roundedRectPath(sctx, chipX, pad, chipSize, chipSize, 14);
-  sctx.fill();
-  sctx.imageSmoothingEnabled = false;
-  sctx.drawImage(
-    qr,
-    Math.round(chipX + (chipSize - qr.width) / 2),
-    Math.round(pad + (chipSize - qr.height) / 2)
-  );
-  sctx.imageSmoothingEnabled = true;
-
-  // Code and subline.
-  const textX = pad + logoSize + Math.round(pad * 0.9);
-  const maxTextW = chipX - textX - pad;
-  sctx.textAlign = "left";
-  sctx.textBaseline = "alphabetic";
-  const codeSize = fitFontSize(
-    sctx,
-    `CODE ${code}`,
-    fonts.data,
-    "700",
-    Math.round(area.h * 0.26),
-    maxTextW
-  );
-  sctx.fillStyle = "#FFFFFF";
-  sctx.font = `700 ${codeSize}px ${fonts.data}`;
-  setLetterSpacing(sctx, "2px");
-  sctx.fillText(`CODE ${code}`, textX, area.h * 0.47);
-  setLetterSpacing(sctx, "0px");
-  sctx.fillStyle = "rgba(244, 248, 252, 0.66)";
-  sctx.font = `500 ${Math.round(area.h * 0.15)}px ${fonts.data}`;
-  sctx.fillText("novig.us  |  trade the Cup", textX, area.h * 0.72);
-
-  ctx.drawImage(strip, area.x, area.y);
+  return size;
 }
 
-function drawBadge(
+function drawImageCover(
   ctx: CanvasRenderingContext2D,
-  text: string,
+  source: HTMLImageElement | HTMLCanvasElement,
   x: number,
   y: number,
-  fonts: FontSet,
-  tint: string
+  width: number,
+  height: number,
+  faceBias = 0.34
 ) {
-  ctx.save();
-  ctx.font = `700 22px ${fonts.data}`;
-  setLetterSpacing(ctx, "3px");
-  const w = ctx.measureText(text).width + 48;
-  const h = 46;
-  ctx.fillStyle = "rgba(10, 10, 16, 0.78)";
-  roundedRectPath(ctx, x - w, y, w, h, h / 2);
+  const sourceWidth = source instanceof HTMLImageElement ? source.naturalWidth : source.width;
+  const sourceHeight = source instanceof HTMLImageElement ? source.naturalHeight : source.height;
+  if (!sourceWidth || !sourceHeight) return;
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const cropWidth = width / scale;
+  const cropHeight = height / scale;
+  const sourceX = (sourceWidth - cropWidth) / 2;
+  const sourceY = Math.max(0, (sourceHeight - cropHeight) * faceBias);
+  ctx.drawImage(source, sourceX, sourceY, cropWidth, cropHeight, x, y, width, height);
+}
+
+function drawPlaceholderPortrait(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  country: CountryTheme
+) {
+  const gradient = ctx.createLinearGradient(x, y, x + width, y + height);
+  gradient.addColorStop(0, country.bg);
+  gradient.addColorStop(1, country.accent);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(x, y, width, height);
+}
+
+async function getQrCanvas(code: string, maxSize: number): Promise<HTMLCanvasElement> {
+  const text = `https://novig.us/?code=${encodeURIComponent(code)}`;
+  const quietZone = 4;
+  const modules = QRCode.create(text, { errorCorrectionLevel: "M" }).modules.size;
+  const scale = Math.max(2, Math.floor(maxSize / (modules + quietZone * 2)));
+  const cacheKey = `${code}:${scale}`;
+  const cached = qrCache.get(cacheKey);
+  if (cached) return cached;
+  const canvas = document.createElement("canvas");
+  await QRCode.toCanvas(canvas, text, {
+    margin: quietZone,
+    scale,
+    errorCorrectionLevel: "M",
+    color: { dark: INK, light: "#FFFFFF" },
+  });
+  qrCache.set(cacheKey, canvas);
+  return canvas;
+}
+
+function money(value: string): string {
+  const parsed = Number(String(value).replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(parsed)) return value;
+  return parsed.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function opponentFor(slip: Slip): string {
+  const teams = slip.matchup
+    .split(/\s+(?:vs\.?|versus)\s+/i)
+    .map((team) => team.trim());
+  return (
+    teams.find((team) => team.toLowerCase() !== slip.side.toLowerCase()) ||
+    teams[1] ||
+    "Opponent"
+  );
+}
+
+function drawLogo(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  image: HTMLImageElement
+) {
+  ctx.drawImage(image, x, y, size, size);
+}
+
+function drawQrChip(
+  ctx: CanvasRenderingContext2D,
+  qr: HTMLCanvasElement,
+  x: number,
+  y: number,
+  size: number,
+  radius = 18
+) {
+  ctx.fillStyle = "#FFFFFF";
+  roundedRectPath(ctx, x, y, size, size, radius);
   ctx.fill();
-  ctx.strokeStyle = tint;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(qr, Math.round(x + (size - qr.width) / 2), Math.round(y + (size - qr.height) / 2));
+  ctx.imageSmoothingEnabled = true;
+}
+
+function drawPoster(
+  ctx: CanvasRenderingContext2D,
+  options: CardOptions,
+  fonts: FontSet,
+  qr: HTMLCanvasElement,
+  width: number,
+  height: number,
+  logo: HTMLImageElement
+) {
+  if (options.portrait) drawImageCover(ctx, options.portrait, 0, 0, width, height, 0.28);
+  else drawPlaceholderPortrait(ctx, 0, 0, width, height, options.country);
+
+  const topShade = ctx.createLinearGradient(0, 0, 0, height * 0.62);
+  topShade.addColorStop(0, "rgba(5, 7, 12, 0.78)");
+  topShade.addColorStop(0.72, "rgba(5, 7, 12, 0.12)");
+  topShade.addColorStop(1, "rgba(5, 7, 12, 0)");
+  ctx.fillStyle = topShade;
+  ctx.fillRect(0, 0, width, height * 0.68);
+
+  const bottomShade = ctx.createLinearGradient(0, height * 0.48, 0, height);
+  bottomShade.addColorStop(0, "rgba(7, 7, 10, 0)");
+  bottomShade.addColorStop(0.58, "rgba(7, 7, 10, 0.42)");
+  bottomShade.addColorStop(1, "rgba(7, 7, 10, 0.96)");
+  ctx.fillStyle = bottomShade;
+  ctx.fillRect(0, height * 0.46, width, height * 0.54);
+
+  ctx.fillStyle = options.country.bg;
+  ctx.fillRect(0, 0, 24, height);
+  ctx.fillStyle = options.country.accent;
+  ctx.fillRect(width - 24, 0, 24, height);
+
+  drawLogo(ctx, 62, 58, 76, logo);
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(255,255,255,0.82)";
+  ctx.font = `700 22px ${fonts.data}`;
+  setLetterSpacing(ctx, "5px");
+  ctx.fillText((options.round || "WORLD CUP").toUpperCase(), width - 62, 95);
+  setLetterSpacing(ctx, "0px");
+
+  ctx.textAlign = "center";
+  ctx.strokeStyle = "rgba(255,255,255,0.76)";
+  ctx.lineWidth = 5;
+  const codeSize = fitText(ctx, options.country.code, fonts.display, "400", 280, width - 100);
+  ctx.font = `400 ${codeSize}px ${fonts.display}`;
+  ctx.strokeText(options.country.code, width / 2, 360);
+
+  ctx.fillStyle = "#FFFFFF";
+  const nameSize = fitText(ctx, options.country.name.toUpperCase(), fonts.display, "400", 124, width - 120);
+  ctx.font = `400 ${nameSize}px ${fonts.display}`;
+  ctx.fillText(options.country.name.toUpperCase(), width / 2, 500);
+
+  const ticketX = 54;
+  const ticketY = height - 440;
+  const ticketWidth = width - 108;
+  const ticketHeight = 350;
+  ctx.fillStyle = "rgba(12,12,17,0.92)";
+  roundedRectPath(ctx, ticketX, ticketY, ticketWidth, ticketHeight, 34);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
   ctx.lineWidth = 2;
-  roundedRectPath(ctx, x - w, y, w, h, h / 2);
+  roundedRectPath(ctx, ticketX, ticketY, ticketWidth, ticketHeight, 34);
   ctx.stroke();
-  ctx.fillStyle = tint;
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "rgba(255,255,255,0.62)";
+  ctx.font = `700 20px ${fonts.data}`;
+  setLetterSpacing(ctx, "4px");
+  ctx.fillText(options.slip.matchup.toUpperCase(), ticketX + 40, ticketY + 60);
+  setLetterSpacing(ctx, "0px");
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `400 58px ${fonts.display}`;
+  ctx.fillText(`$${money(options.slip.toWin)} TO WIN`, ticketX + 40, ticketY + 140);
+
+  const stats = [
+    ["TRADE", `$${money(options.slip.stake)}`],
+    ["ODDS", options.slip.odds],
+    ["CHANCE", `${options.slip.probability}%`],
+  ];
+  stats.forEach(([label, value], index) => {
+    const x = ticketX + 40 + index * 220;
+    ctx.fillStyle = "rgba(255,255,255,0.52)";
+    ctx.font = `700 17px ${fonts.data}`;
+    ctx.fillText(label, x, ticketY + 215);
+    ctx.fillStyle = index === 2 ? options.country.accent : "#FFFFFF";
+    ctx.font = `700 34px ${fonts.data}`;
+    ctx.fillText(value, x, ticketY + 258);
+  });
+  drawQrChip(ctx, qr, ticketX + ticketWidth - 156, ticketY + 172, 118, 20);
+  ctx.fillStyle = "rgba(255,255,255,0.62)";
+  ctx.font = `700 16px ${fonts.data}`;
+  ctx.textAlign = "right";
+  ctx.fillText(`CODE ${options.code}`, ticketX + ticketWidth - 38, ticketY + 328);
+}
+
+function drawEditorial(
+  ctx: CanvasRenderingContext2D,
+  options: CardOptions,
+  fonts: FontSet,
+  qr: HTMLCanvasElement,
+  width: number,
+  height: number,
+  logo: HTMLImageElement
+) {
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = options.country.bg;
+  ctx.fillRect(0, 0, 28, height);
+  ctx.fillStyle = options.country.accent;
+  ctx.fillRect(28, 0, 10, height);
+
+  ctx.fillStyle = INK;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `700 18px ${fonts.data}`;
+  setLetterSpacing(ctx, "5px");
+  ctx.fillText("novig: for the cup", 72, 70);
+  setLetterSpacing(ctx, "0px");
+  drawLogo(ctx, width - 126, 36, 72, logo);
+
+  const photoX = 72;
+  const photoY = 112;
+  const photoWidth = width - 126;
+  const photoHeight = 690;
+  ctx.save();
+  roundedRectPath(ctx, photoX, photoY, photoWidth, photoHeight, 12);
+  ctx.clip();
+  if (options.portrait) drawImageCover(ctx, options.portrait, photoX, photoY, photoWidth, photoHeight, 0.3);
+  else drawPlaceholderPortrait(ctx, photoX, photoY, photoWidth, photoHeight, options.country);
+  const gradient = ctx.createLinearGradient(photoX, photoY + photoHeight * 0.4, photoX, photoY + photoHeight);
+  gradient.addColorStop(0, "rgba(5,5,8,0)");
+  gradient.addColorStop(1, "rgba(5,5,8,0.58)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(photoX, photoY, photoWidth, photoHeight);
+  ctx.restore();
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.textAlign = "left";
+  ctx.font = `700 18px ${fonts.data}`;
+  setLetterSpacing(ctx, "4px");
+  ctx.fillText((options.round || "WORLD CUP").toUpperCase(), photoX + 30, photoY + photoHeight - 76);
+  setLetterSpacing(ctx, "0px");
+  ctx.font = `400 60px ${fonts.display}`;
+  ctx.fillText(options.country.code, photoX + 30, photoY + photoHeight - 24);
+
+  const titleY = 895;
+  ctx.fillStyle = INK;
+  const titleSize = fitText(ctx, options.country.name.toUpperCase(), fonts.display, "400", 92, width - 144);
+  ctx.font = `400 ${titleSize}px ${fonts.display}`;
+  ctx.fillText(options.country.name.toUpperCase(), 72, titleY);
+  ctx.fillStyle = "rgba(10,10,16,0.58)";
+  ctx.font = `500 23px ${fonts.data}`;
+  ctx.fillText(`${options.slip.matchup}  /  ${options.slip.market}`, 74, titleY + 58);
+
+  ctx.strokeStyle = "rgba(10,10,16,0.18)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(72, titleY + 98);
+  ctx.lineTo(width - 54, titleY + 98);
+  ctx.stroke();
+
+  const stats = [
+    ["FIXED TRADE", `$${money(options.slip.stake)}`],
+    ["TO WIN", `$${money(options.slip.toWin)}`],
+    ["LIVE ODDS", options.slip.odds],
+    ["CHANCE", `${options.slip.probability}%`],
+  ];
+  stats.forEach(([label, value], index) => {
+    const x = 74 + index * 202;
+    ctx.fillStyle = "rgba(10,10,16,0.48)";
+    ctx.font = `700 15px ${fonts.data}`;
+    setLetterSpacing(ctx, "2px");
+    ctx.fillText(label, x, titleY + 146);
+    setLetterSpacing(ctx, "0px");
+    ctx.fillStyle = index === 3 ? options.country.bg : INK;
+    ctx.font = `700 36px ${fonts.data}`;
+    ctx.fillText(value, x, titleY + 192);
+  });
+
+  ctx.fillStyle = options.country.bg;
+  roundedRectPath(ctx, 72, height - 142, width - 286, 88, 44);
+  ctx.fill();
+  ctx.fillStyle = options.country.ink;
+  ctx.font = `700 21px ${fonts.data}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`CODE ${options.code}  •  novig: winners welcome`, 106, height - 98);
+  drawQrChip(ctx, qr, width - 190, height - 166, 112, 18);
+}
+
+function drawScoreboard(
+  ctx: CanvasRenderingContext2D,
+  options: CardOptions,
+  fonts: FontSet,
+  width: number,
+  height: number,
+  marks: { white: HTMLImageElement; wordmark: HTMLImageElement }
+) {
+  const gold = "#C9A35A";
+  const paleGold = "#E9D49A";
+  const parchment = "#E8DDC8";
+  const opponent = opponentFor(options.slip);
+
+  ctx.fillStyle = "#08090E";
+  ctx.fillRect(0, 0, width, height);
+  const ambient = ctx.createRadialGradient(width * 0.5, height * 0.38, 30, width * 0.5, height * 0.42, 720);
+  ambient.addColorStop(0, `${options.country.bg}A8`);
+  ambient.addColorStop(0.54, `${options.country.bg}38`);
+  ambient.addColorStop(1, "rgba(5,6,10,0)");
+  ctx.fillStyle = ambient;
+  ctx.fillRect(0, 0, width, height);
+
+  for (let index = 0; index < 26; index += 1) {
+    const y = 18 + index * 41;
+    ctx.fillStyle = index % 2 === 0 ? "rgba(255,255,255,0.012)" : "rgba(0,0,0,0.045)";
+    ctx.fillRect(0, y, width, 1);
+  }
+
+  drawLogo(ctx, 44, 34, 54, marks.white);
+  ctx.drawImage(marks.wordmark, 116, 48, 142, 25);
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(232,221,200,0.72)";
+  ctx.font = `700 15px ${fonts.data}`;
+  setLetterSpacing(ctx, "3px");
+  ctx.fillText((options.round || "WORLD CUP").toUpperCase(), width - 46, 61);
+  setLetterSpacing(ctx, "0px");
+
+  const frameX = 78;
+  const frameY = 112;
+  const frameWidth = 924;
+  const frameHeight = 620;
+  const frameGradient = ctx.createLinearGradient(frameX, frameY, frameX + frameWidth, frameY + frameHeight);
+  frameGradient.addColorStop(0, "#5A3510");
+  frameGradient.addColorStop(0.18, "#E0BE72");
+  frameGradient.addColorStop(0.48, "#7A4D1B");
+  frameGradient.addColorStop(0.72, "#F0D58C");
+  frameGradient.addColorStop(1, "#4A2B0E");
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.72)";
+  ctx.shadowBlur = 34;
+  ctx.shadowOffsetY = 18;
+  ctx.fillStyle = frameGradient;
+  ctx.fillRect(frameX, frameY, frameWidth, frameHeight);
+  ctx.restore();
+
+  ctx.strokeStyle = "#F4DF9B";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(frameX + 4, frameY + 4, frameWidth - 8, frameHeight - 8);
+  ctx.strokeStyle = "#3A220C";
+  ctx.lineWidth = 10;
+  ctx.strokeRect(frameX + 17, frameY + 17, frameWidth - 34, frameHeight - 34);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(frameX + 28, frameY + 28, frameWidth - 56, frameHeight - 56);
+
+  ctx.fillStyle = parchment;
+  ctx.fillRect(frameX + 34, frameY + 34, frameWidth - 68, frameHeight - 68);
+  ctx.fillStyle = "#151015";
+  ctx.fillRect(frameX + 47, frameY + 47, frameWidth - 94, frameHeight - 94);
+
+  const photoX = frameX + 58;
+  const photoY = frameY + 58;
+  const photoWidth = frameWidth - 116;
+  const photoHeight = frameHeight - 116;
+  ctx.save();
+  ctx.rect(photoX, photoY, photoWidth, photoHeight);
+  ctx.clip();
+  if (options.portrait) drawImageCover(ctx, options.portrait, photoX, photoY, photoWidth, photoHeight, 0.3);
+  else drawPlaceholderPortrait(ctx, photoX, photoY, photoWidth, photoHeight, options.country);
+  ctx.globalCompositeOperation = "multiply";
+  ctx.fillStyle = "rgba(95,55,22,0.16)";
+  ctx.fillRect(photoX, photoY, photoWidth, photoHeight);
+  ctx.globalCompositeOperation = "source-over";
+  const overlay = ctx.createRadialGradient(width / 2, photoY + photoHeight * 0.43, 110, width / 2, photoY + photoHeight * 0.44, 520);
+  overlay.addColorStop(0, "rgba(255,233,188,0.04)");
+  overlay.addColorStop(0.7, "rgba(18,10,10,0.05)");
+  overlay.addColorStop(1, "rgba(7,5,8,0.62)");
+  ctx.fillStyle = overlay;
+  ctx.fillRect(photoX, photoY, photoWidth, photoHeight);
+  ctx.restore();
+
+  const ornaments = [
+    [frameX + 22, frameY + 22, 1, 1],
+    [frameX + frameWidth - 22, frameY + 22, -1, 1],
+    [frameX + 22, frameY + frameHeight - 22, 1, -1],
+    [frameX + frameWidth - 22, frameY + frameHeight - 22, -1, -1],
+  ] as const;
+  ornaments.forEach(([x, y, directionX, directionY]) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(directionX, directionY);
+    ctx.strokeStyle = paleGold;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 50);
+    ctx.bezierCurveTo(3, 22, 22, 3, 50, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(13, 13, 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  ctx.fillStyle = "#100C10";
+  ctx.fillRect(width / 2 - 172, frameY + frameHeight - 32, 344, 58);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(width / 2 - 172, frameY + frameHeight - 32, 344, 58);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, x - w / 2, y + h / 2 + 1);
+  ctx.fillStyle = paleGold;
+  ctx.font = `700 15px ${fonts.data}`;
+  setLetterSpacing(ctx, "4px");
+  ctx.fillText("THE GALLERY SLIP", width / 2, frameY + frameHeight - 3);
   setLetterSpacing(ctx, "0px");
-  ctx.restore();
-}
 
-function formatMoney(raw: string): string {
-  const n = Number(String(raw).replace(/[^0-9.]/g, ""));
-  if (!isFinite(n) || n <= 0) return raw || "0";
-  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = parchment;
+  const sideSize = fitText(ctx, options.slip.side.toUpperCase(), fonts.editorial, "600", 92, 640, 54);
+  ctx.font = `600 ${sideSize}px ${fonts.editorial}`;
+  ctx.fillText(options.slip.side.toUpperCase(), 70, 836);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(232,221,200,0.78)";
+  ctx.font = `600 38px ${fonts.editorial}`;
+  ctx.fillText(`vs ${opponent}`, width - 70, 809);
+  ctx.fillStyle = "rgba(232,221,200,0.46)";
+  ctx.font = `700 13px ${fonts.data}`;
+  setLetterSpacing(ctx, "2px");
+  ctx.fillText((options.venue || "WORLD CUP").toUpperCase(), width - 72, 838);
+  setLetterSpacing(ctx, "0px");
 
-export async function renderCard(
-  canvas: HTMLCanvasElement,
-  opts: CardOptions
-): Promise<void> {
-  await ensureFontsLoaded();
-  const fonts = fontFamilies();
+  const boardY = 872;
+  const boardX = 58;
+  const boardWidth = width - 116;
+  const boardHeight = 142;
+  const plaque = ctx.createLinearGradient(boardX, boardY, boardX, boardY + boardHeight);
+  plaque.addColorStop(0, "rgba(40,31,34,0.96)");
+  plaque.addColorStop(1, "rgba(13,12,16,0.98)");
+  ctx.fillStyle = plaque;
+  ctx.fillRect(boardX, boardY, boardWidth, boardHeight);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(boardX, boardY, boardWidth, boardHeight);
 
-  const isStory = opts.format === "story";
-  const ticketH = isStory ? 196 : 164;
-  const ticketPad = Math.round(ticketH * 0.17);
-  const qr = await getQrCanvas(opts.code, ticketH - ticketPad * 2 - 8);
-  const W = 1080;
-  const H = isStory ? 1920 : 1080;
-  if (canvas.width !== W) canvas.width = W;
-  if (canvas.height !== H) canvas.height = H;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const cooked = opts.status === "COOKED";
-  const bg = cooked ? COOKED_THEME.bg : opts.country.bg;
-  const ink = cooked ? COOKED_THEME.ink : opts.country.ink;
-  const lightTint = mixTowardWhite(bg, 0.84);
-
-  const topH = Math.round(H * (isStory ? 0.46 : 0.42));
-  const k = isStory ? 1 : 0.62; // type scale for the square recipe
-  const maxW = W - MARGIN * 2;
-
-  // ---- background blocks ----
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, topH);
-  ctx.fillStyle = NEAR_BLACK;
-  ctx.fillRect(0, topH, W, H - topH);
-
-  // ---- portrait, real photo, no filters ----
-  const portraitH = H - topH;
-  if (opts.portrait) {
-    drawImageCover(ctx, opts.portrait, 0, topH, W, portraitH);
-  }
-
-  // ---- type stack in the top block ----
-  const eyebrow = `${opts.slip.matchup}  •  ${opts.slip.market}`.toUpperCase();
-  const moneyLabel = "TO WIN";
-  const moneyText = `$${formatMoney(opts.slip.toWin)}`;
-  const oddsText = `ODDS ${opts.slip.odds}`.toUpperCase();
-  const sideText = `${opts.slip.side}  •  STAKE $${formatMoney(
-    opts.slip.stake
-  )}`.toUpperCase();
-
-  let eyebrowSize = Math.round(30 * k);
-  let labelSize = Math.round(34 * k);
-  let sideSize = Math.round(28 * k);
+  const stats = [
+    ["CHANCE", `${options.slip.probability}%`],
+    ["ODDS", options.slip.odds],
+    ["STAKE", `$${money(options.slip.stake)}`],
+    ["TO WIN", `$${money(options.slip.toWin)}`],
+  ];
+  stats.forEach(([label, value], index) => {
+    const x = boardX + 34 + index * 235;
+    if (index > 0) {
+      ctx.strokeStyle = "rgba(201,163,90,0.28)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x - 25, boardY + 27);
+      ctx.lineTo(x - 25, boardY + boardHeight - 27);
+      ctx.stroke();
+    }
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(232,221,200,0.52)";
+    ctx.font = `700 13px ${fonts.data}`;
+    setLetterSpacing(ctx, "2px");
+    ctx.fillText(label, x, boardY + 38);
+    setLetterSpacing(ctx, "0px");
+    ctx.fillStyle = index === 0 ? options.country.accent : parchment;
+    ctx.font = `600 48px ${fonts.editorial}`;
+    ctx.fillText(value, x, boardY + 100);
+  });
 
   ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "rgba(232,221,200,0.55)";
+  ctx.font = `700 13px ${fonts.data}`;
+  setLetterSpacing(ctx, "3px");
+  ctx.fillText("novig: for the cup", width / 2, 1050);
+  setLetterSpacing(ctx, "0px");
+}
 
-  let statusSize = fitFontSize(
-    ctx,
-    opts.status,
-    fonts.display,
-    "400",
-    Math.round(300 * k),
-    maxW
-  );
-  let moneySize = fitFontSize(
-    ctx,
-    moneyText,
-    fonts.display,
-    "400",
-    Math.round(210 * k),
-    maxW
-  );
-  let oddsSize = fitFontSize(
-    ctx,
-    oddsText,
-    fonts.display,
-    "400",
-    Math.round(104 * k),
-    maxW * 0.8
-  );
+export async function renderCard(canvas: HTMLCanvasElement, options: CardOptions): Promise<void> {
+  await ensureFontsLoaded();
+  const brandMarks = await getBrandMarks();
+  const fonts = fontFamilies();
+  const variant = CARD_VARIANTS.find((entry) => entry.id === options.style) || CARD_VARIANTS[0];
+  canvas.width = variant.width;
+  canvas.height = variant.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, variant.width, variant.height);
 
-  let gap = Math.round(34 * k);
-  let smallGap = Math.round(16 * k);
-  const stackHeight = () =>
-    eyebrowSize +
-    gap +
-    statusSize +
-    gap +
-    labelSize +
-    smallGap +
-    moneySize +
-    gap +
-    oddsSize +
-    gap +
-    sideSize;
-
-  // The whole stack must live inside the top block, above the hazard band.
-  const stackRoom = topH - Math.round(72 * k) - 40;
-  if (stackHeight() > stackRoom) {
-    const f = stackRoom / stackHeight();
-    eyebrowSize = Math.round(eyebrowSize * f);
-    labelSize = Math.round(labelSize * f);
-    sideSize = Math.round(sideSize * f);
-    statusSize = Math.round(statusSize * f);
-    moneySize = Math.round(moneySize * f);
-    oddsSize = Math.round(oddsSize * f);
-    gap = Math.round(gap * f);
-    smallGap = Math.round(smallGap * f);
+  if (options.style === "scoreboard") {
+    drawScoreboard(ctx, options, fonts, variant.width, variant.height, brandMarks);
+    return;
   }
 
-  const stackH = stackHeight();
-  let y = Math.max((topH - 40 - stackH) / 2, Math.round(32 * k));
-  const cx = W / 2;
+  const qr = await getQrCanvas(options.code, options.style === "poster" ? 118 : 112);
 
-  // Eyebrow: matchup and market.
-  y += eyebrowSize;
-  ctx.font = `700 ${eyebrowSize}px ${fonts.data}`;
-  setLetterSpacing(ctx, `${Math.round(6 * k)}px`);
-  ctx.fillStyle = ink;
-  ctx.fillText(eyebrow, cx, y, maxW);
-  setLetterSpacing(ctx, "0px");
-
-  // Status word, outlined only.
-  y += gap + statusSize;
-  ctx.font = `400 ${statusSize}px ${fonts.display}`;
-  ctx.strokeStyle = ink;
-  ctx.lineWidth = Math.max(3, Math.round(statusSize * 0.02));
-  ctx.strokeText(opts.status, cx, y - statusSize * 0.14);
-
-  // Money line, solid.
-  y += gap + labelSize;
-  ctx.font = `700 ${labelSize}px ${fonts.data}`;
-  setLetterSpacing(ctx, `${Math.round(10 * k)}px`);
-  ctx.fillStyle = ink;
-  ctx.fillText(moneyLabel, cx, y);
-  setLetterSpacing(ctx, "0px");
-  y += smallGap + moneySize;
-  ctx.font = `400 ${moneySize}px ${fonts.display}`;
-  ctx.fillText(moneyText, cx, y - moneySize * 0.14);
-
-  // Odds line, outlined.
-  y += gap + oddsSize;
-  ctx.font = `400 ${oddsSize}px ${fonts.display}`;
-  ctx.lineWidth = Math.max(2, Math.round(oddsSize * 0.03));
-  ctx.strokeText(oddsText, cx, y - oddsSize * 0.14);
-
-  // Side and stake, small caps.
-  y += gap + sideSize;
-  ctx.font = `700 ${sideSize}px ${fonts.data}`;
-  setLetterSpacing(ctx, `${Math.round(5 * k)}px`);
-  ctx.fillText(sideText, cx, y, maxW);
-  setLetterSpacing(ctx, "0px");
-
-  // ---- hazard divider over the seam ----
-  drawHazardBand(ctx, W, topH, Math.round(52 * (isStory ? 1 : 0.8)), bg, ink);
-
-  // ---- vertical rails ----
-  const railCenter = topH + portraitH * 0.42;
-  drawRailText(ctx, "NOVIG BOOTH  GET CAPPED", 38, railCenter, "rgba(244, 248, 252, 0.5)", fonts.data, false);
-  drawRailText(ctx, "PEER TO PEER  ZERO VIG", W - 38, railCenter, "rgba(244, 248, 252, 0.5)", fonts.data, true);
-
-  // ---- ticket strip ----
-  const ticketMargin = isStory ? 56 : 40;
-  const ticket: TicketArea = {
-    x: ticketMargin,
-    y: H - ticketMargin - ticketH,
-    w: W - ticketMargin * 2,
-    h: ticketH,
-  };
-  drawTicketStrip(ctx, ticket, opts.code, qr, fonts);
-
-  // ---- AI FIT badge over the portrait ----
-  drawBadge(
-    ctx,
-    `AI FIT • ${opts.seed}`,
-    W - MARGIN + 20,
-    topH + Math.round(48 * (isStory ? 1 : 0.7)),
-    fonts,
-    lightTint
-  );
+  if (options.style === "editorial") {
+    drawEditorial(ctx, options, fonts, qr, variant.width, variant.height, brandMarks.blue);
+    return;
+  }
+  drawPoster(ctx, options, fonts, qr, variant.width, variant.height, brandMarks.white);
 }

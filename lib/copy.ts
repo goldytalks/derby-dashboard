@@ -4,7 +4,7 @@ export const CTA_LABEL = "Run the booth";
 export const POSE_PROMPTS = [
   "Chin up. You just cashed.",
   "Give us captain energy.",
-  "Arms crossed. Zero vig face.",
+  "Arms crossed. Winners welcome.",
   "Look past the camera like it owes you money.",
   "Big tournament smile.",
   "Game face. Stoppage time.",
@@ -56,7 +56,7 @@ export function buildCaption(
   return (
     `Just got capped for ${countryName}. ` +
     `${STATUS_VERBS[status]} $${amount}. ` +
-    `Trade the Cup with me on Novig. Code ${code}.`
+    `novig: for the cup. Code ${code}.`
   );
 }
 
