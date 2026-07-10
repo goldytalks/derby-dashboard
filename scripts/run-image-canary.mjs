@@ -64,7 +64,7 @@ function expectedModel(options) {
   if (process.env.AI_IMAGE_PROVIDER === "gemini") {
     return process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
   }
-  return process.env.AI_GATEWAY_IMAGE_MODEL || "google/gemini-3.1-flash-image";
+  return process.env.AI_GATEWAY_IMAGE_MODEL || "bfl/flux-2-klein-4b";
 }
 
 function parseImageDataUrl(value) {

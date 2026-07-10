@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { generateImage } from "ai";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import {
@@ -28,7 +29,7 @@ const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ALLOWED_PAYLOAD_KEYS = new Set(["jobId", "selectionKey", "imageBase64", "teamCode"]);
 const CANARY_SECRET_HEADER = "x-booth-canary-secret";
 const CANARY_MODEL_HEADER = "x-booth-canary-model";
-const CANARY_VERIFICATION_SCHEMA = "novig-booth-image-canary-v2";
+const CANARY_VERIFICATION_SCHEMA = "novig-booth-image-canary-v3";
 const CANARY_VALIDITY_MS = 7 * 24 * 60 * 60 * 1_000;
 const CANARY_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 const CANARY_INPUT_PATH = join(
@@ -39,7 +40,7 @@ const CANARY_INPUT_PATH = join(
   "arg.webp"
 );
 const GEMINI_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
-const GATEWAY_MODEL = process.env.AI_GATEWAY_IMAGE_MODEL || "google/gemini-3.1-flash-image";
+const GATEWAY_MODEL = process.env.AI_GATEWAY_IMAGE_MODEL || "bfl/flux-2-klein-4b";
 const GATEWAY_PREFLIGHT_MODEL = process.env.AI_GATEWAY_PREFLIGHT_MODEL || "google/gemini-3.1-flash-lite";
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
 const GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -93,10 +94,6 @@ interface RateBucket {
 
 const rateBuckets = new Map<string, RateBucket>();
 
-interface GatewayImageUrl {
-  url?: unknown;
-}
-
 class GenerationError extends Error {
   constructor(
     readonly code: string,
@@ -118,6 +115,14 @@ function responseJson(body: unknown, status = 200) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function providerStatus(error: unknown): number | undefined {
+  if (!isRecord(error)) return undefined;
+  for (const value of [error.statusCode, error.status]) {
+    if (typeof value === "number" && Number.isInteger(value)) return value;
+  }
+  return isRecord(error.cause) ? providerStatus(error.cause) : undefined;
 }
 
 function asString(value: unknown, maxLength: number): string | undefined {
@@ -221,15 +226,13 @@ function verificationBinding(
 
   const generationConfig = provider === "gateway"
     ? {
-        endpoint: GATEWAY_URL,
+        sdk: "ai.generateImage",
+        transport: "vercel-ai-gateway",
         model: modelForProvider(provider),
-        modalities: ["text", "image"],
-        imageDetail: "high",
-        providerOrder: ["vertex", "google"],
-        disallowPromptTraining: true,
-        responseModalities: ["TEXT", "IMAGE"],
+        input: "text-plus-one-reference-image",
         aspectRatio: "1:1",
-        imageSize: "1K",
+        maxRetries: 0,
+        providerRouting: "gateway-default-bfl",
       }
     : {
         endpoint: GEMINI_INTERACTIONS_URL,
@@ -453,46 +456,6 @@ function dataUrlFromUnknown(value: unknown): string | undefined {
   return undefined;
 }
 
-function extractGatewayImage(result: unknown): string | undefined {
-  if (!isRecord(result)) return undefined;
-
-  const choices = Array.isArray(result.choices) ? result.choices : [];
-  const message = isRecord(choices[0]) && isRecord(choices[0].message)
-    ? choices[0].message
-    : undefined;
-  if (message) {
-    const images = Array.isArray(message.images) ? message.images : [];
-    for (const image of images) {
-      if (!isRecord(image)) continue;
-      const imageUrl = isRecord(image.image_url)
-        ? image.image_url as GatewayImageUrl
-        : image;
-      const found = dataUrlFromUnknown(imageUrl);
-      if (found) return found;
-    }
-
-    const content = Array.isArray(message.content) ? message.content : [];
-    for (const part of content) {
-      if (!isRecord(part)) continue;
-      const imageUrl = isRecord(part.image_url) ? part.image_url : part;
-      const inlineData = isRecord(part.inlineData)
-        ? part.inlineData
-        : isRecord(part.inline_data)
-          ? part.inline_data
-          : undefined;
-      const found = dataUrlFromUnknown(imageUrl) || dataUrlFromUnknown(inlineData);
-      if (found) return found;
-    }
-  }
-
-  const files = Array.isArray(result.files) ? result.files : [];
-  for (const file of files) {
-    const found = dataUrlFromUnknown(file);
-    if (found) return found;
-  }
-  return undefined;
-}
-
 function extractGeminiInteractionImage(result: unknown): string | undefined {
   if (!isRecord(result)) return undefined;
 
@@ -570,55 +533,36 @@ async function generateWithGateway(
 ): Promise<GeneratedPortrait> {
   if (!token) throw new GenerationError("provider_unconfigured");
 
-  const response = await fetch(GATEWAY_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  try {
+    const result = await generateImage({
       model: GATEWAY_MODEL,
-      modalities: ["text", "image"],
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${image.mime};base64,${image.data}`,
-                detail: "high",
-              },
-            },
-          ],
-        },
-      ],
-      stream: false,
-      providerOptions: {
-        gateway: {
-          order: ["vertex", "google"],
-          disallowPromptTraining: true,
-        },
-        google: {
-          responseModalities: ["TEXT", "IMAGE"],
-          imageConfig: { aspectRatio: "1:1", imageSize: "1K" },
-        },
+      prompt: {
+        text: prompt,
+        images: [image.bytes],
       },
-    }),
-    cache: "no-store",
-    signal,
-  });
+      aspectRatio: "1:1",
+      maxRetries: 0,
+      abortSignal: signal,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-  const result = await parseJsonResponse(response);
-  if (!response.ok) {
-    const status = response.status === 422 ? 422 : response.status;
-    throw new GenerationError(status === 422 ? "moderation_blocked" : "provider_rejected", status);
+    const generated = result.images[0];
+    if (!generated) throw new GenerationError("no_image");
+    const imageDataUrl = `data:${generated.mediaType || "image/png"};base64,${generated.base64}`;
+    return checkedOutput(imageDataUrl, image);
+  } catch (error) {
+    if (error instanceof GenerationError) throw error;
+    if (signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw error;
+    }
+    const status = providerStatus(error);
+    throw new GenerationError(
+      status === 422 ? "moderation_blocked" : "provider_rejected",
+      status
+    );
   }
-
-  const imageDataUrl = extractGatewayImage(result);
-  if (!imageDataUrl) throw new GenerationError("no_image");
-  return checkedOutput(imageDataUrl, image);
 }
 
 async function generatePortrait(

@@ -14,6 +14,8 @@ const PAGE_PATH = "app/page.tsx";
 const ROUTE_PATH = "app/api/generate/route.ts";
 const PROMPTS_PATH = "lib/server/team-prompts.ts";
 const CANARY_RUNNER_PATH = "scripts/run-image-canary.mjs";
+const ENV_EXAMPLE_PATH = ".env.local.example";
+const DEFAULT_GATEWAY_IMAGE_MODEL = "bfl/flux-2-klein-4b";
 
 const EXPECTED_TEAM_CODES = [
   "FRA",
@@ -130,6 +132,7 @@ const page = read(PAGE_PATH);
 const route = read(ROUTE_PATH);
 const prompts = read(PROMPTS_PATH);
 const canaryRunner = read(CANARY_RUNNER_PATH);
+const envExample = read(ENV_EXAMPLE_PATH);
 
 // A slip renderer is allowed. Portrait/identity compositors are not.
 const imports = occurrences(page, /\bfrom\s+["']([^"']+)["']/g).map((match) => match[1]);
@@ -279,6 +282,67 @@ check(
   /await\s+perceptualDifference\(input,\s*output\)\s*<\s*MIN_PERCEPTUAL_DIFFERENCE/.test(route) &&
     /throw\s+new\s+GenerationError\(["']unchanged_image["']\)/.test(route),
   `${ROUTE_PATH} can accept a visually unchanged re-encoded image.`
+);
+
+// The default Gateway edit must use AI SDK image generation with the selfie as a reference image.
+check(
+  /import\s*\{[^}]*\bgenerateImage\b[^}]*\}\s*from\s*["']ai["']/.test(route),
+  `${ROUTE_PATH} does not import AI SDK generateImage.`
+);
+const gatewayGenerationStart = route.indexOf("async function generateWithGateway(");
+const gatewayGenerationEnd = route.indexOf("\nasync function generatePortrait(", gatewayGenerationStart);
+check(
+  gatewayGenerationStart >= 0 && gatewayGenerationEnd > gatewayGenerationStart,
+  `Could not isolate the Gateway image-generation adapter in ${ROUTE_PATH}.`
+);
+const gatewayGeneration = gatewayGenerationStart >= 0 && gatewayGenerationEnd > gatewayGenerationStart
+  ? route.slice(gatewayGenerationStart, gatewayGenerationEnd)
+  : "";
+check(
+  /await\s+generateImage\s*\(\s*\{/.test(gatewayGeneration),
+  `${ROUTE_PATH} Gateway adapter does not call AI SDK generateImage.`
+);
+check(
+  /\bmodel:\s*GATEWAY_MODEL\b/.test(gatewayGeneration),
+  `${ROUTE_PATH} Gateway generateImage call does not use the configured Gateway image model.`
+);
+check(
+  /\bprompt:\s*\{/.test(gatewayGeneration)
+    && /\btext:\s*prompt\b/.test(gatewayGeneration)
+    && /\bimages:\s*\[\s*image\.bytes\s*\]/.test(gatewayGeneration),
+  `${ROUTE_PATH} Gateway generateImage prompt must include text and the parsed input bytes in prompt.images.`
+);
+check(
+  !/\bfetch\s*\(/.test(gatewayGeneration),
+  `${ROUTE_PATH} Gateway image adapter still uses a raw HTTP/chat request instead of generateImage.`
+);
+for (const legacyGatewayExtraction of [
+  /\bextractGatewayImage\b/,
+  /\bGatewayImageUrl\b/,
+  /\bresult\.choices\b/,
+  /\bmessage\.images\b/,
+  /\bmessage\.content\b/,
+]) {
+  check(
+    !legacyGatewayExtraction.test(route),
+    `${ROUTE_PATH} still contains legacy Gateway chat image extraction ${legacyGatewayExtraction}.`
+  );
+}
+check(
+  /async\s+function\s+generateWithGemini\s*\(/.test(route),
+  `${ROUTE_PATH} no longer retains the explicit direct Gemini fallback adapter.`
+);
+check(
+  new RegExp(`AI_GATEWAY_IMAGE_MODEL\\s*\\|\\|\\s*["']${DEFAULT_GATEWAY_IMAGE_MODEL.replaceAll("/", "\\/")}["']`).test(route),
+  `${ROUTE_PATH} Gateway image default must be ${DEFAULT_GATEWAY_IMAGE_MODEL}.`
+);
+check(
+  canaryRunner.includes(`process.env.AI_GATEWAY_IMAGE_MODEL || "${DEFAULT_GATEWAY_IMAGE_MODEL}"`),
+  `${CANARY_RUNNER_PATH} does not default to ${DEFAULT_GATEWAY_IMAGE_MODEL}.`
+);
+check(
+  new RegExp(`^AI_GATEWAY_IMAGE_MODEL=${DEFAULT_GATEWAY_IMAGE_MODEL.replaceAll("/", "\\/")}$`, "m").test(envExample),
+  `${ENV_EXAMPLE_PATH} does not default to ${DEFAULT_GATEWAY_IMAGE_MODEL}.`
 );
 
 // Release proof must belong to this build and this full prompt/provider configuration.

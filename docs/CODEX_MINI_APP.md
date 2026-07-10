@@ -19,10 +19,10 @@ The active flow is deterministic:
 
 Requirements:
 
-- Node.js 20.9+
+- Node.js 22+
 - npm
 - a browser with camera permission for real-photo checks
-- a configured hosted provider and valid release-canary proof
+- the default Gateway FLUX provider or direct Gemini fallback, with a valid release-canary proof
 
 ```bash
 npm install
@@ -42,7 +42,7 @@ GET /api/generate?teamCode=<allowlisted-team-code>
 
 The response is ready only when:
 
-- a server-side provider is configured;
+- the default `bfl/flux-2-klein-4b` Gateway model or direct Gemini fallback is configured;
 - the exact deployed artifact, prompt suite, model, provider configuration, and validation rules passed the protected canary in under 42 seconds;
 - that proof is still inside its seven-day validity window; and
 - the live credential and billing probe succeeds.
@@ -58,7 +58,7 @@ After capture, the page sends:
 }
 ```
 
-The server owns the prompt. It validates the team, image, payload size, output MIME, output size, generation time, decoded pixels, and job correlation. A successful response must echo the same `jobId`, `selectionKey`, and `teamCode` with `status: complete` and one new square image.
+The server owns the prompt. The default Gateway adapter uses AI SDK `generateImage` with an object prompt containing the treatment text and the normalized selfie bytes in `prompt.images`; this is an image edit, never a text-only generation request. The explicit direct Gemini adapter remains the fallback. The server validates the team, image, payload size, output MIME, output size, generation time, decoded pixels, and job correlation. A successful response must echo the same `jobId`, `selectionKey`, and `teamCode` with `status: complete` and one new square image.
 
 ## Cohesive portrait requirement
 
@@ -68,13 +68,13 @@ The server and browser both reject visually unchanged output. The final canvas r
 
 ## Release canary
 
-The protected canary uses a server-owned synthetic image and the same provider path, prompts, timeout, correlation, and decoded-pixel validation as a fan request.
+The protected canary uses a server-owned synthetic reference image and the same AI SDK `generateImage` Gateway path, prompts, timeout, correlation, and decoded-pixel validation as a fan request. It therefore verifies that `bfl/flux-2-klein-4b` can actually edit an input portrait, not merely return a newly generated image. The direct Gemini fallback has its own matching canary path when explicitly selected.
 
 ```bash
 BOOTH_CANARY_SECRET=... node scripts/run-image-canary.mjs \
   --url https://your-preview.vercel.app \
   --team USC \
-  --model google/gemini-3.1-flash-image
+  --model bfl/flux-2-klein-4b
 ```
 
 A successful run writes its generated image to a private temporary file and prints the server-only verification environment values for that exact release. Inspect the output visually before recording those values or promoting the deployment.

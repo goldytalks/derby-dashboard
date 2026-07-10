@@ -24,11 +24,11 @@ The finished portrait is a real image-to-image generation. Team artwork under `p
 
 Before mounting the camera, the booth asks `GET /api/generate` for a live readiness check. Readiness requires all three of these conditions:
 
-- a configured Vercel AI Gateway or direct Gemini provider;
+- the default Vercel AI Gateway FLUX model or the direct Gemini fallback;
 - a successful release canary for the exact deployed build, prompts, provider configuration, and image model in under 42 seconds; and
 - a live credential and billing probe.
 
-After capture, the browser normalizes one square photo and sends one correlated request containing a job ID, frozen selection key, and allowlisted team code. The server owns every prompt and asks the image model to re-render the face, hair, neck, body, costume, background, lighting, texture, and color grade as one unified photograph. It rejects unchanged, oversized, malformed, late, or mismatched output. There is no composited or original-photo fallback.
+After capture, the browser normalizes one square photo and sends one correlated request containing a job ID, frozen selection key, and allowlisted team code. The default Gateway path calls AI SDK `generateImage` with `bfl/flux-2-klein-4b`, the server-owned text prompt, and that normalized selfie as a reference prompt image. The direct Gemini adapter remains available as an explicit fallback. Both paths ask the image model to re-render the face, hair, neck, body, costume, background, lighting, texture, and color grade as one unified photograph. The server rejects unchanged, oversized, malformed, late, or mismatched output. There is no text-only generation, composited result, or original-photo fallback.
 
 Once a generated result passes validation, the browser makes a short, bounded persistence attempt before showing the finished slip: only the generated image is kept in same-origin Cache Storage for 30 minutes, while small metadata in tab-scoped session storage correlates the job, mode, team, game, and frozen selection. A successful write makes the same finished slip refresh-restorable. If browser storage is unavailable, slow, or a write fails, the validated portrait still appears, but that instance is not refresh-restorable. The raw camera capture is never persisted.
 
@@ -46,7 +46,7 @@ flowchart LR
   Next --> Pick
 ```
 
-On Vercel, AI Gateway authentication uses the short-lived OIDC token attached to each Function request, so the app does not need a long-lived image API key. The Vercel team still needs billing verification before Gateway credits can be used. Production remains closed at the readiness screen until a real canary passes.
+On Vercel, the default `bfl/flux-2-klein-4b` image edit authenticates through the short-lived OIDC token attached to each Function request, so the app does not need a long-lived image API key. The Vercel team still needs billing verification before Gateway credits can be used. Production remains closed at the readiness screen until a real canary passes.
 
 ## Complete starting slates
 
@@ -71,7 +71,7 @@ All eighteen sides have distinct artwork and costume direction. Schedule state i
 
 Requirements:
 
-- Node.js 20.9 or newer
+- Node.js 22 or newer
 - npm
 - A browser with camera permission, or fixture mode
 
@@ -109,7 +109,7 @@ Useful URLs:
 - `lib/composite.ts` — square Gallery Slip canvas renderer
 - `lib/motion.ts` — optional square WebM/MP4 export
 - `public/templates/ai/` — eighteen pick-card previews only
-- `scripts/assert-cohesive-flow.mjs` — structural regression gate preventing any compositor/template result path
+- `scripts/assert-cohesive-flow.mjs` — structural regression gate requiring reference-image `generateImage` and preventing compositor, template-result, or legacy Gateway chat-extraction paths
 - `scripts/run-image-canary.mjs` — protected synthetic-image release canary for a deployed provider
 
 ## Verification
@@ -138,7 +138,7 @@ The canary itself uses a server-owned synthetic image and the exact production p
 BOOTH_CANARY_SECRET=... node scripts/run-image-canary.mjs \
   --url https://your-preview.vercel.app \
   --team USC \
-  --model google/gemini-3.1-flash-image
+  --model bfl/flux-2-klein-4b
 ```
 
 ## Approved brand copy
