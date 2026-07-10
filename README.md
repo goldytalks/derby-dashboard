@@ -20,25 +20,29 @@ There is no confirmation page, editable form, provider chooser, upload panel, QR
 
 ## Hosted AI portrait architecture
 
-The production result does not depend on a local process, a provider key, or an unreliable third-party queue. Eighteen complete AI-generated character portraits are bundled with the application: eight World Cup quarterfinalists and both schools in every one of the five college-football openers. Every source portrait already has a complete face, body, costume, and scene.
+The finished portrait is a real image-to-image generation. Team artwork under `public/templates/ai/` is used only on the pick cards; it is never used as the result portrait. The app does not paste facial pixels into a pre-made head, mascot opening, or body.
 
-At capture time, a bundled on-device face detector locates the fan's eyes, mouth, and face bounds without uploading the selfie. The compositor then blends only their identifying facial features into the full AI portrait and matches the generated scene's color and light. A face-shaped feather matte preserves the generated hair, jaw, costume, and background. There is no empty face opening, unchanged-photo fallback, or visible oval cutout.
+Before mounting the camera, the booth asks `GET /api/generate` for a live readiness check. Readiness requires all three of these conditions:
 
-This gives the booth a deterministic, fully hosted result even if an external image service is slow or unavailable:
+- a configured Vercel AI Gateway or direct Gemini provider;
+- a successful release canary for the exact image model in under 42 seconds; and
+- a live credential and billing probe.
+
+After capture, the browser normalizes one square photo and sends one correlated request containing a job ID, frozen selection key, and allowlisted team code. The server owns every prompt and asks the image model to re-render the face, hair, neck, body, costume, background, lighting, texture, and color grade as one unified photograph. It rejects unchanged, oversized, malformed, late, or mismatched output. There is no composited or original-photo fallback.
 
 ```mermaid
 flowchart LR
   Pick[Pick a side] --> Camera[Camera]
-  Camera --> Costume[Full AI character portrait]
-  Costume --> Identity[Seamless identity blend]
-  Identity --> Slip[Square Gallery Slip]
+  Camera --> Generate[One cohesive AI portrait]
+  Generate --> Validate[Validate correlated square result]
+  Validate --> Slip[Square Gallery Slip]
   Slip --> Still[Save or share PNG]
   Slip --> Motion[Optional 4.5 second motion cut]
   Slip --> Next[Next fan]
   Next --> Pick
 ```
 
-`GET /api/generate` reports whether an optional server-side enhancement provider is configured. Its POST contract requires a job ID, rejects unchanged output, and has a 25-second timeout. The guaranteed booth path never waits for it.
+On Vercel, AI Gateway authentication uses the short-lived OIDC token attached to each Function request, so the app does not need a long-lived image API key. The Vercel team still needs billing verification before Gateway credits can be used. Production remains closed at the readiness screen until a real canary passes.
 
 ## Complete starting slates
 
@@ -87,8 +91,8 @@ Useful URLs:
 | --- | --- |
 | `GET /api/slate` | World Cup schedule/status snapshot with verified fallback data |
 | `GET /api/slate?mode=cfb` | Five verified 2026 openers and ten selectable schools |
-| `GET /api/generate` | Report optional hosted enhancement availability |
-| `POST /api/generate` | Correlated, server-only optional enhancement request |
+| `GET /api/generate?teamCode=FRA` | Live image-provider and release-canary preflight |
+| `POST /api/generate` | Correlated, server-owned cohesive portrait edit |
 | `POST /api/codex-image-job` | Legacy local bridge retained for compatibility; not used by the hosted booth |
 
 ## Important files
@@ -96,13 +100,11 @@ Useful URLs:
 - `app/page.tsx` — the four-state booth experience
 - `app/globals.css` — responsive visual system and team animation
 - `lib/slate.ts` — schedule, odds, and matchup data
-- `lib/prompts.ts` — all country and school visual themes
-- `lib/face-blend.ts` — face-aware AI identity and lighting compositor
-- `lib/instant-portrait.ts` — compatibility facade for the full-AI renderer
+- `lib/prompts.ts` — country and school display themes
+- `lib/server/team-prompts.ts` — allowlisted server-owned cohesive edit prompts
 - `lib/composite.ts` — square Gallery Slip canvas renderer
 - `lib/motion.ts` — optional square WebM/MP4 export
-- `public/templates/ai/` — eighteen complete AI-generated character portraits
-- `public/mediapipe/` — self-hosted face detector runtime and model
+- `public/templates/ai/` — eighteen pick-card previews only
 
 ## Verification
 
@@ -112,7 +114,13 @@ npm run build
 npm audit --omit=dev
 ```
 
-`?fixture=1` covers the complete camera-to-AI-portrait-to-still-to-motion path without a physical webcam. The production deployment is also tested directly after release.
+`?fixture=1` supplies a synthetic camera frame but still uses the real hosted generation route. It can never substitute a preview or fake a finished result. A production release also requires real-camera visual checks for France, Belgium, Spain, and USC.
+
+After a successful model canary, deployment automation records:
+
+- `AI_IMAGE_PROVIDER_VERIFIED=1`
+- `AI_IMAGE_PROVIDER_VERIFIED_MODEL=<exact model id>`
+- `AI_IMAGE_PROVIDER_CANARY_MS=<measured elapsed time>`
 
 ## Approved brand copy
 
